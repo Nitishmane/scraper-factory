@@ -6,10 +6,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# The deployment blueprint identifier. A teammate is provisioning it in parallel; if a
-# stock blueprint conflicted and it landed as "factory_deployment", change this ONE line.
+# The deployment blueprint identifier. A stock `deployment` blueprint (quickstart, different
+# schema) already existed in Port, so ours is registered as `factory_deployment`.
 env:
-  BLUEPRINT_DEPLOYMENT: deployment
+  BLUEPRINT_DEPLOYMENT: factory_deployment
   PORT_BASE_URL: https://api.getport.io
 
 jobs:
