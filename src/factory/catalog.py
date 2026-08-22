@@ -17,7 +17,16 @@ from typing import Any
 from . import brightdata, state, telemetry
 
 CATALOG_URL = "https://www.philo.com/go/allshows"
+# philo.com/go/allmovies is the movies sibling of allshows, linked from the same nav.
+# Movies are modeled as "Show:" internally -- same base64 ID prefix, same
+# philo.com/player/show/<id> record URL -- so the embedded-JSON parse is identical. This is
+# an embedded-JSON fetch only (no collector): the catalog collector stays on allshows.
+MOVIES_URL = "https://www.philo.com/go/allmovies"
 COLLECTOR_ENV = "SCRAPER_STUDIO_COLLECTOR_ID_PHILO_CATALOG"
+
+# The movies page legitimately renders far fewer tiles than allshows; treat a parse below
+# this as a broken movies fetch (skip it, keep the shows) rather than a shrunk catalog.
+MIN_MOVIE_ROWS = 100
 
 # philo advertises 70k+ titles but the browse page renders a large subset; below this the
 # scrape is considered broken rather than the catalog having shrunk.
@@ -71,8 +80,48 @@ def refresh() -> dict[str, Any]:
             return {"rows": len(rows), "saved": 0, "ok": False}
 
         state.save_catalog(entries)
-        telemetry.log().info("catalog refreshed: %d titles mapped", len(entries))
-        return {"rows": len(rows), "saved": len(entries), "ok": True}
+        # Movies are a separate page and an additive merge: a movies-page failure must not
+        # sink the shows refresh, so it logs a warning and returns 0 rather than raising.
+        movies = _refresh_movies()
+        span.set_attribute("movies.saved", movies)
+        telemetry.log().info(
+            "catalog refreshed: %d show titles + %d movie titles mapped",
+            len(entries),
+            movies,
+        )
+        return {
+            "rows": len(rows),
+            "saved": len(entries),
+            "movies": movies,
+            "ok": True,
+        }
+
+
+def _refresh_movies() -> int:
+    """Merge philo.com/go/allmovies into the same catalog map. Returns rows saved.
+
+    Best-effort and additive: any failure (fetch error, empty parse, too few rows) logs a
+    warning and returns 0 so the shows refresh still counts as a success.
+    """
+    with telemetry.tracer().start_as_current_span("catalog.refresh_movies") as span:
+        span.set_attribute("target.url", MOVIES_URL)
+        try:
+            entries = _parse_embedded(brightdata.fetch_html(MOVIES_URL))
+        except Exception as exc:  # network/CLI failure -- keep the shows we already saved
+            span.set_attribute("movies.error", str(exc)[:120])
+            telemetry.log().warning("movies catalog fetch failed, skipping: %s", exc)
+            return 0
+        span.set_attribute("rows.returned", len(entries))
+        if len(entries) < MIN_MOVIE_ROWS:
+            telemetry.log().warning(
+                "movies page yielded %d usable rows (< %d) -- skipping the movies merge",
+                len(entries),
+                MIN_MOVIE_ROWS,
+            )
+            return 0
+        state.save_catalog(entries)
+        telemetry.log().info("movies catalog merged: %d titles mapped", len(entries))
+        return len(entries)
 
 
 def _parse_embedded(html: str) -> list[dict[str, Any]]:
