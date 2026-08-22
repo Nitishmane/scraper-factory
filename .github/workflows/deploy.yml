@@ -1,0 +1,119 @@
+name: Deploy
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch:
+
+# The deployment blueprint identifier. A teammate is provisioning it in parallel; if a
+# stock blueprint conflicted and it landed as "factory_deployment", change this ONE line.
+env:
+  BLUEPRINT_DEPLOYMENT: deployment
+  PORT_BASE_URL: https://api.getport.io
+
+jobs:
+  deploy:
+    # Run on manual dispatch, or when a PR into main is actually merged (not just closed).
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Vercel CLI
+        run: npm i -g vercel@latest
+
+      - name: Pull Vercel production environment
+        working-directory: webapp
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Build for production
+        working-directory: webapp
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Deploy prebuilt to production
+        id: deploy
+        working-directory: webapp
+        run: |
+          DEPLOY_URL=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "deploy_url=$DEPLOY_URL" >> "$GITHUB_OUTPUT"
+          echo "Deployed to $DEPLOY_URL"
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Extract requirement id from PR body
+        id: reqid
+        run: |
+          # Empty on workflow_dispatch (no PR body); only PR-merge events carry a requirement.
+          BODY=$(cat <<'PR_BODY_EOF'
+          ${{ github.event.pull_request.body }}
+          PR_BODY_EOF
+          )
+          REQ_ID=$(printf '%s\n' "$BODY" | grep -oE 'Requirement: (req_[A-Za-z0-9_-]+)' | head -n1 | sed -E 's/Requirement: //')
+          echo "req_id=$REQ_ID" >> "$GITHUB_OUTPUT"
+          echo "now=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          if [ -n "$REQ_ID" ]; then
+            echo "Found requirement $REQ_ID"
+          else
+            echo "No requirement id in trigger (workflow_dispatch or non-builder PR)"
+          fi
+
+      - name: Record deployment entity in Port
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          baseUrl: ${{ env.PORT_BASE_URL }}
+          operation: UPSERT
+          blueprint: ${{ env.BLUEPRINT_DEPLOYMENT }}
+          identifier: deploy_${{ github.sha }}
+          properties: |
+            {
+              "environment": "production",
+              "url": "${{ steps.deploy.outputs.deploy_url }}",
+              "commit_sha": "${{ github.sha }}",
+              "status": "success",
+              "deployed_at": "${{ steps.reqid.outputs.now }}"
+            }
+
+      - name: Link deployment to its requirement
+        if: steps.reqid.outputs.req_id != ''
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          baseUrl: ${{ env.PORT_BASE_URL }}
+          operation: UPSERT
+          blueprint: ${{ env.BLUEPRINT_DEPLOYMENT }}
+          identifier: deploy_${{ github.sha }}
+          relations: |
+            {
+              "requirement": "${{ steps.reqid.outputs.req_id }}"
+            }
+
+      - name: Flip requirement to deployed
+        if: steps.reqid.outputs.req_id != ''
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          baseUrl: ${{ env.PORT_BASE_URL }}
+          operation: UPSERT
+          blueprint: requirement
+          identifier: ${{ steps.reqid.outputs.req_id }}
+          properties: |
+            {
+              "status": "deployed"
+            }
