@@ -237,8 +237,8 @@ HEAL_AUTOMATION = {
 
 BUILD_ACTION = {
     "identifier": "request_data_source",
-    "title": "Request a data source",
-    "description": "Submit a brief; the factory builds and verifies a scraper for it",
+    "title": "Onboard data source \u2192 Bright Data scraper",
+    "description": "Submit a brief; the factory creates a Bright Data collector, runs it, and verifies it against the fixture before registering the scraper",
     "trigger": {
         "type": "self-service",
         "operation": "CREATE",
@@ -262,8 +262,8 @@ BUILD_ACTION = {
 # workflow dispatch. Port sends the run + entity payload; the endpoint reads inputs from it.
 FEATURE_REQUEST_ACTION = {
     "identifier": "submit_feature_request",
-    "title": "Submit a feature request",
-    "description": "File a requirement; the Claude builder implements it on a branch and opens a PR",
+    "title": "Feature request \u2192 Claude Builder PR",
+    "description": "File a requirement; the local Claude Code builder implements it and opens a GitHub PR that must pass the deterministic CI gate and a human merge",
     "trigger": {
         "type": "self-service",
         "operation": "CREATE",
@@ -489,8 +489,8 @@ EVENT_WORKFLOWS = (WF_PUBLISH_ON_SUCCESS, WF_HEAL_ON_BAD_RUN)
 # blueprint is how Port models a global self-service button.
 RUN_SCRAPE_NOW_ACTION = {
     "identifier": "run_scrape_now",
-    "title": "Run a scrape now",
-    "description": "Kick off a scrape immediately for one provider or all",
+    "title": "Scrape TV guides \u2192 Bright Data collectors",
+    "description": "Scrape streamingtvguides.com channel pages now (one provider or all) via the Bright Data fetch/extract relay; results land as scrape_run entities",
     "trigger": {
         "type": "self-service",
         "operation": "DAY-2",
@@ -520,8 +520,8 @@ RUN_SCRAPE_NOW_ACTION = {
 
 REFRESH_CATALOG_NOW_ACTION = {
     "identifier": "refresh_catalog_now",
-    "title": "Refresh the catalog now",
-    "description": "Refresh the Philo title -> record-URL catalog immediately",
+    "title": "Refresh Philo record-link catalog",
+    "description": "Re-scrape philo.com/go/allshows + /go/allmovies so ranked titles resolve to real Record pages",
     "trigger": {
         "type": "self-service",
         "operation": "DAY-2",
@@ -533,8 +533,8 @@ REFRESH_CATALOG_NOW_ACTION = {
 
 PUBLISH_NOW_ACTION = {
     "identifier": "publish_now",
-    "title": "Publish top-20 now",
-    "description": "Recompute and publish the ranked top-20 immediately",
+    "title": "Publish top-10s \u2192 Context Lake",
+    "description": "Re-rank (TMDB scoring) and upsert the top-10 shows + top-10 movies as ranked_title entities; the Vercel webapp reads them live",
     "trigger": {
         "type": "self-service",
         "operation": "DAY-2",
