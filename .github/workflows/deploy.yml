@@ -20,6 +20,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Make the CI deploy identity-free, like a local CLI deploy. Without this, Vercel
+      # attributes the deployment to the commit's git author; on the free `mns10` team an
+      # author who isn't a verified team member trips a TEAM_ACCESS_REQUIRED seat block and
+      # the deployment lands in BLOCKED. Dropping .git strips all git metadata so Vercel
+      # deploys the prebuilt output with no attribution. Safe here: nothing downstream reads
+      # .git -- the requirement id comes from github.event.pull_request.body and commit_sha
+      # from github.sha, both GitHub Actions context, not the working-tree repo.
+      - name: Strip git metadata so Vercel deploys without author attribution
+        run: rm -rf .git
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
