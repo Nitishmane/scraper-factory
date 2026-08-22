@@ -1,0 +1,13 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+out/
+fixtures/.*.bak
+.DS_Store
+fixtures/relay/
+webapp/.vercel
+webapp/.env*.local
+node_modules/
+.next/
+nohup.out

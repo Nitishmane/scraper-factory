@@ -1,0 +1,25 @@
+# The factory service. SigNoz runs separately -- see README.
+#
+# Self-hosted SigNoz brings its own compose stack (clickhouse, collector, query service,
+# frontend). Rather than vendor a copy that will drift out of date, clone SigNoz and bring
+# it up on its own, then point this service at it. On Linux, host.docker.internal needs the
+# extra_hosts entry below; on macOS/Windows Docker Desktop provides it.
+
+services:
+  factory:
+    build: .
+    env_file: .env
+    environment:
+      # override .env's localhost so the container can reach SigNoz on the host
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://host.docker.internal:4318
+      PYTHONPATH: /app/src
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./fixtures:/app/fixtures
+      - ./out:/app/out
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: >
+      opentelemetry-instrument python -m uvicorn factory.app:app
+      --host 0.0.0.0 --port 8000

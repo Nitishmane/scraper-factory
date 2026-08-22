@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scraper Factory — how it works</title>
+<style>
+  :root { color-scheme: dark;
+    --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e;
+    --blue:#58a6ff; --green:#3fb950; --yellow:#d29922; --red:#f85149; --purple:#bc8cff; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--text);
+         font:15px/1.55 -apple-system,"Segoe UI",sans-serif; padding:2.5rem 1rem 5rem; }
+  main { max-width:960px; margin:0 auto; }
+  h1 { font-size:1.7rem; }
+  h2 { font-size:1.15rem; margin:2.8rem 0 .9rem; padding-bottom:.4rem;
+       border-bottom:1px solid var(--line); }
+  .sub { color:var(--muted); margin:.3rem 0 0; }
+  .pill { display:inline-block; font-size:.7rem; font-weight:700; letter-spacing:.06em;
+          border:1px solid var(--line); border-radius:999px; padding:.1rem .55rem;
+          color:var(--muted); vertical-align:middle; }
+  .pill.green{color:var(--green);border-color:var(--green)}
+  .pill.blue{color:var(--blue);border-color:var(--blue)}
+  .pill.purple{color:var(--purple);border-color:var(--purple)}
+  .pill.yellow{color:var(--yellow);border-color:var(--yellow)}
+
+  /* product cards */
+  .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:.8rem; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+          padding:1rem; display:flex; gap:.9rem; align-items:flex-start; }
+  .mark { width:44px; height:44px; border-radius:10px; flex-shrink:0; display:flex;
+          align-items:center; justify-content:center; font-weight:800; font-size:1.15rem; }
+  .card b { display:block; margin-bottom:.15rem; }
+  .card p { color:var(--muted); font-size:.85rem; }
+  .card code { font-size:.78rem; color:var(--text); }
+
+  /* flow */
+  .flow { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+          padding:1.2rem; overflow-x:auto; }
+  .lane { display:flex; align-items:center; gap:.5rem; margin:.65rem 0; flex-wrap:nowrap;
+          min-width:640px; }
+  .lane-label { width:106px; flex-shrink:0; color:var(--muted); font-size:.72rem;
+                font-weight:700; letter-spacing:.05em; text-transform:uppercase; }
+  .node { background:var(--bg); border:1px solid var(--line); border-radius:8px;
+          padding:.4rem .7rem; font-size:.82rem; white-space:nowrap; }
+  .node small { display:block; color:var(--muted); font-size:.68rem; }
+  .node.hot { border-color:var(--blue); }
+  .node.gate { border-color:var(--green); }
+  .node.alarm { border-color:var(--yellow); }
+  .arrow { color:var(--muted); flex-shrink:0; font-size:.9rem; }
+
+  table { width:100%; border-collapse:collapse; font-size:.85rem; }
+  th, td { text-align:left; padding:.5rem .7rem; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:600; font-size:.75rem; text-transform:uppercase;
+       letter-spacing:.05em; }
+  td code { font-size:.78rem; }
+  .schemas { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:.8rem; }
+  .schema { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:1rem; }
+  .schema b { font-size:.9rem; }
+  .schema .where { color:var(--muted); font-size:.72rem; margin-bottom:.5rem; }
+  .schema ul { list-style:none; padding:0; font-size:.8rem; }
+  .schema li { padding:.12rem 0; color:var(--text); }
+  .schema li span { color:var(--muted); }
+  .note { background:var(--panel); border-left:3px solid var(--green); border-radius:6px;
+          padding:.8rem 1rem; font-size:.9rem; margin-top:1rem; }
+  footer { margin-top:3rem; color:var(--muted); font-size:.8rem; }
+  footer code { color:var(--text); }
+</style>
+</head>
+<body>
+<main>
+  <h1>The Scraper Factory</h1>
+  <p class="sub">Scrapers as catalogued services: every run traced, drift is an alert, repair is
+  an automated loop gated by a frozen fixture.
+  <b style="color:var(--text)">Judgment goes to the agent. Proof stays deterministic.</b></p>
+
+  <h2>The platforms — who does what</h2>
+  <div class="cards">
+    <div class="card"><div class="mark" style="background:#1a3a5c;color:var(--blue)">BD</div>
+      <div><b>Bright Data Scraper Studio</b>
+      <p>The scraping. AI collectors from semantic prompts, CLI-only:
+      <code>create · run · heal · approve</code>.</p></div></div>
+    <div class="card"><div class="mark" style="background:#173a2a;color:var(--green)">P</div>
+      <div><b>Port</b>
+      <p>The control plane: catalog, drift automation → <code>/heal</code>, scorecard, operator
+      dashboard.</p></div></div>
+    <div class="card"><div class="mark" style="background:#3a2a17;color:var(--yellow)">S</div>
+      <div><b>SigNoz</b>
+      <p>Traces, metrics, logs — correlated. Dashboard + drift alert provisioned as code.</p></div></div>
+    <div class="card"><div class="mark" style="background:#2a1a3c;color:var(--purple)">T</div>
+      <div><b>TMDB</b>
+      <p>Popularity + rating for the ranker, movies and shows. Cached in SQLite.</p></div></div>
+    <div class="card"><div class="mark" style="background:#1a2a3c;color:var(--blue)">TV</div>
+      <div><b>streamingtvguides.com</b>
+      <p>Guide source: one page per channel, ~455 programs, ~12 days ahead.</p></div></div>
+    <div class="card"><div class="mark" style="background:#3c1a2a;color:#ff7b9d">Ph</div>
+      <div><b>Philo</b>
+      <p>Click-through target: 358 titles mapped to <code>player/show/&lt;id&gt;</code> record
+      pages.</p></div></div>
+  </div>
+
+  <h2>What calls what</h2>
+  <div class="flow">
+    <div class="lane"><div class="lane-label">Scrape</div>
+      <div class="node hot">make run<small>factory CLI</small></div><span class="arrow">→</span>
+      <div class="node">lineup(provider)<small>guide-page anchors</small></div><span class="arrow">→</span>
+      <div class="node hot">collector run × 25<small>channel-schedule, fetch/extract split ↓</small></div><span class="arrow">→</span>
+      <div class="node">parse times ET→UTC<small>deterministic</small></div><span class="arrow">→</span>
+      <div class="node">SQLite<small>guide_row</small></div></div>
+    <div class="lane"><div class="lane-label">Detect</div>
+      <div class="node">drift rules<small>bands · nulls · collapse · parse</small></div><span class="arrow">→</span>
+      <div class="node alarm">Port: health = drifting<small>fast path, seconds</small></div><span class="arrow">→</span>
+      <div class="node hot">Port automation<small>webhook</small></div><span class="arrow">→</span>
+      <div class="node hot">POST /heal<small>FastAPI, traced</small></div></div>
+    <div class="lane"><div class="lane-label">Safety net</div>
+      <div class="node alarm">SigNoz alert<small>drift.detected &gt; 0</small></div><span class="arrow">→</span>
+      <div class="node">webhook channel<small>~5 min grouping</small></div><span class="arrow">→</span>
+      <div class="node hot">POST /heal<small>same idempotent endpoint</small></div></div>
+    <div class="lane"><div class="lane-label">Repair</div>
+      <div class="node hot">scraper heal<small>semantic prompt</small></div><span class="arrow">→</span>
+      <div class="node">preview_result<small>awaiting_approval</small></div><span class="arrow">→</span>
+      <div class="node gate">Verifier: diff vs fixture<small>plain code — the gate</small></div><span class="arrow">→</span>
+      <div class="node">approve / --reject<small>promote or escalate</small></div></div>
+    <div class="lane"><div class="lane-label">Product</div>
+      <div class="node">ranker<small>TMDB × airings × prime time</small></div><span class="arrow">→</span>
+      <div class="node">Port: ranked_title<small>the Context Lake holds the product</small></div><span class="arrow">→</span>
+      <div class="node hot">/top20 + Vercel webapp<small>reads the lake · record on Philo</small></div></div>
+  </div>
+  <div class="note">Two drift triggers, one idempotent <code>/heal</code>: the inline detector is
+  the reflex (seconds), the SigNoz alert is the immune system.</div>
+
+  <h2>The fetch/extract split — why runs show a relay URL</h2>
+  <div class="flow">
+    <div class="lane"><div class="lane-label">Fetch</div>
+      <div class="node hot">brightdata scrape<small>Web Unlocker zone</small></div><span class="arrow">→</span>
+      <div class="node">streamingtvguides.com<small>LIVE page, ~600KB</small></div><span class="arrow">→</span>
+      <div class="node">fixtures/relay/&lt;page&gt;.html<small>archived input, 30-min cache</small></div></div>
+    <div class="lane"><div class="lane-label">Extract</div>
+      <div class="node">tunnel (cloudflared)<small>FIXTURE_BASE_URL</small></div><span class="arrow">→</span>
+      <div class="node hot">collector run<small>channel-schedule</small></div><span class="arrow">→</span>
+      <div class="node">program rows<small>title · times · category</small></div></div>
+  </div>
+  <div class="note" style="border-left-color:var(--yellow)">
+    <b>Why:</b> Bright Data's policy blocks streaming-media domains for collector runs
+    (confirmed by their support engineer, who endorsed this exact pattern). So the pipeline
+    uses <b>two Bright Data products</b>: the Web Unlocker fetches the live page, the Scraper
+    Studio collector extracts and self-heals. Two wins fall out for free: the collector always
+    tries direct first, so if policy changes the relay disappears on its own — and every
+    scrape's <em>input HTML is archived</em>, so a drift investigation replays the exact bytes
+    the collector saw.
+  </div>
+
+  <h2>The scrapers</h2>
+  <table>
+    <tr><th>name</th><th>collector</th><th>target</th><th>promotion gate</th></tr>
+    <tr><td>channel-schedule <span class="pill green">healthy</span></td>
+        <td><code>c_mt4n0qmdo7ev4x1dn</code></td>
+        <td>any <code>/Channel/&lt;ID&gt;</code> page — one collector, every channel</td>
+        <td>frozen fixture <code>channel.html</code> + <code>expected.json</code> diff</td></tr>
+    <tr><td>philo-catalog <span class="pill green">healthy</span></td>
+        <td><code>c_mt4ljtldpkz0bb9gi</code></td>
+        <td><code>philo.com/go/allshows</code> (SPA → embedded-JSON fallback)</td>
+        <td>row-count band (<code>MIN_ROWS</code>) — a moving target by design</td></tr>
+  </table>
+
+  <h2>Port — the control plane, in detail</h2>
+  <div class="cards">
+    <div class="card"><div class="mark" style="background:#173a2a;color:var(--green)">1</div>
+      <div><b>Context Lake — the catalog</b>
+      <p>Five blueprints, all provisioned by <code>make bootstrap</code>:
+      <code>scraper</code> (health · verify_status · prompt), <code>scrape_run</code>
+      (rows · drift · clickable trace_url), <code>heal_event</code> (the repair audit),
+      <code>ranked_title</code> (the product), <code>data_source</code> (operator briefs).</p></div></div>
+    <div class="card"><div class="mark" style="background:#173a2a;color:var(--green)">2</div>
+      <div><b>Workflows — the drift automation</b>
+      <p><code>invoke_healer_on_drift</code>: ENTITY_UPDATED on <code>scraper</code>, JQ-gated on
+      <code>health == "drifting"</code> → webhook to the factory's public <code>/heal</code>.
+      Plus <code>request_data_source</code>: an operator brief in, a verified scraper out.</p></div></div>
+    <div class="card"><div class="mark" style="background:#173a2a;color:var(--green)">3</div>
+      <div><b>AI agents</b>
+      <p>The Port-native Triage agent authors drift descriptions; a Claude coding agent
+      provisioned this entire control plane through the API — Port as a platform consumed
+      by agents, not just humans.</p></div></div>
+    <div class="card"><div class="mark" style="background:#173a2a;color:var(--green)">4</div>
+      <div><b>Governance — the scorecard</b>
+      <p><code>Scraper reliability</code>: Basic → Bronze (verified today) → Silver (verify
+      passing) → Gold (healthy + verified). Computed from properties the pipeline writes —
+      trust as data, not claims.</p></div></div>
+    <div class="card"><div class="mark" style="background:#173a2a;color:var(--green)">5</div>
+      <div><b>Interface Builder — Factory Operator</b>
+      <p>One dashboard: scrapers-by-health pie, heal-event table, ranked-titles table with
+      record links, architecture note, and the SigNoz dashboard iframe.</p></div></div>
+    <div class="card"><div class="mark" style="background:#0d1117;color:var(--muted)">⚙</div>
+      <div><b>All of it is code</b>
+      <p><code>scripts/bootstrap_port.py</code> — idempotent, re-runnable, no UI clicks.
+      The API shapes were validated against the live EU instance
+      (<code>api.getport.io</code>).</p></div></div>
+  </div>
+  <div class="flow" style="margin-top:.8rem">
+    <div class="lane"><div class="lane-label">The loop</div>
+      <div class="node">detector: drift</div><span class="arrow">→</span>
+      <div class="node alarm">scraper.health = drifting<small>one entity PATCH</small></div><span class="arrow">→</span>
+      <div class="node hot">automation fires<small>JQ condition</small></div><span class="arrow">→</span>
+      <div class="node hot">POST /heal<small>observed live from AWS</small></div><span class="arrow">→</span>
+      <div class="node gate">heal → verify → promote<small>heal_event written back</small></div></div>
+  </div>
+
+  <h2>The agents — and the one thing that is deliberately not an agent</h2>
+  <table>
+    <tr><th>agent</th><th>kind</th><th>role</th></tr>
+    <tr><td>Triage <span class="pill blue">Port-native</span></td><td>LLM</td>
+        <td>reads run history, decides heal vs escalate, authors the drift description</td></tr>
+    <tr><td>Healer</td><td>code + LLM behind <code>scraper heal</code></td>
+        <td>sends the symptom to Scraper Studio, receives a proposed fix + preview</td></tr>
+    <tr><td>Verifier <span class="pill green">deterministic</span></td><td><b>plain code — never an LLM</b></td>
+        <td>diffs the preview against the frozen fixture; the only thing allowed to promote</td></tr>
+    <tr><td>Promoter</td><td>code</td>
+        <td><code>approve</code> / <code>--reject</code>, writes the heal_event audit record</td></tr>
+    <tr><td>Builder</td><td>code</td>
+        <td>turns an operator brief (Port action) into <code>scraper create</code></td></tr>
+    <tr><td>port-setup <span class="pill purple">coding agent</span></td><td>Claude subagent</td>
+        <td>provisioned the Port control plane end to end via API, idempotently</td></tr>
+  </table>
+
+  <h2>Schemas</h2>
+  <div class="schemas">
+    <div class="schema"><b>guide_row</b><div class="where">SQLite · out/factory.db</div>
+      <ul><li>provider · channel · title <span>keys</span></li>
+          <li>episode_title · kind · category</li>
+          <li>start_utc · end_utc <span>computed locally</span></li>
+          <li>start_raw <span>raw string — the drift canary</span></li>
+          <li>is_new <span>NEW/LIVE badge</span></li></ul></div>
+    <div class="schema"><b>catalog</b><div class="where">SQLite</div>
+      <ul><li>title_norm <span>match key</span></li>
+          <li>title · url <span>philo.com/player/show/&lt;id&gt;</span></li></ul></div>
+    <div class="schema"><b>ranked_title</b><div class="where">Port Context Lake · read by the webapp</div>
+      <ul><li>rank · title · kind · score</li>
+          <li>next_airing_at · channel · provider</li>
+          <li>is_new · airings</li>
+          <li>record_url <span>the one-click Record link</span></li></ul></div>
+    <div class="schema"><b>Port blueprints</b><div class="where">Context Lake · api.getport.io</div>
+      <ul><li>scraper <span>health · verify_status · prompt</span></li>
+          <li>scrape_run <span>rows · drift · trace_url</span></li>
+          <li>heal_event <span>outcome · heal_prompt</span></li>
+          <li>ranked_title <span>rank · record_url</span></li>
+          <li>data_source <span>operator briefs</span></li></ul></div>
+    <div class="schema"><b>fixtures/</b><div class="where">frozen inputs — never regenerated to pass</div>
+      <ul><li>channel.html <span>real page, trimmed to 30 cards</span></li>
+          <li>channel.expected.json <span>hand-checked truth</span></li>
+          <li>channel.mutated.html <span>same meaning, structure scrambled</span></li>
+          <li>relay/ <span>archived scrape inputs</span></li></ul></div>
+    <div class="schema"><b>telemetry</b><div class="where">SigNoz · OTLP :4318</div>
+      <ul><li>scrape.run → scrape.fetch × N <span>spans</span></li>
+          <li>scraper.drift.detected <span>alert metric</span></li>
+          <li>scraper.heal.success / attempts</li>
+          <li>logs <span>trace-correlated repair audit</span></li></ul></div>
+  </div>
+
+  <footer>
+    Demo: <code>make run</code> → <code>make rank</code> → open <code>/top20</code> ·
+    manufacture drift: <code>make demo-drift</code> ·
+    gate: <code>make verify</code> (exit 0 twice = reproducible) ·
+    this page: <code>open demo/index.html</code>
+  </footer>
+</main>
+</body>
+</html>

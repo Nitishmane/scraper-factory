@@ -1,0 +1,315 @@
+:root {
+  color-scheme: dark;
+  --bg: #0a0e14;
+  --bg-elev: #12171f;
+  --bg-card: #151b24;
+  --bg-card-hover: #1a2230;
+  --border: #232b36;
+  --border-hover: #3a4657;
+  --text: #e6edf3;
+  --text-dim: #8b949e;
+  --text-faint: #5c6470;
+  --accent: #5aa2ff;
+  --accent-soft: rgba(90, 162, 255, 0.14);
+  --new: #3fb950;
+  --new-soft: rgba(63, 185, 80, 0.14);
+  --movie: #d29bff;
+  --movie-soft: rgba(210, 155, 255, 0.13);
+  --show: #58c9c2;
+  --show-soft: rgba(88, 201, 194, 0.13);
+}
+* {
+  box-sizing: border-box;
+  margin: 0;
+}
+body {
+  background:
+    radial-gradient(1200px 600px at 15% -10%, rgba(90, 162, 255, 0.08), transparent 60%),
+    radial-gradient(1000px 500px at 100% 0%, rgba(210, 155, 255, 0.06), transparent 55%),
+    var(--bg);
+  color: var(--text);
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 3rem 1.25rem 5rem;
+}
+
+/* ---- Two-column layout: Shows left, Movies right ---- */
+.columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.75rem;
+  align-items: start;
+}
+
+/* ---- Header ---- */
+.hero {
+  margin-bottom: 2rem;
+}
+.eyebrow {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 0.28rem 0.7rem;
+  margin-bottom: 0.9rem;
+}
+h1 {
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+}
+.stamp {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  max-width: 60ch;
+}
+.banner {
+  background: linear-gradient(180deg, rgba(158, 106, 3, 0.22), rgba(158, 106, 3, 0.12));
+  border: 1px solid #9e6a03;
+  color: #e3b341;
+  border-radius: 10px;
+  padding: 0.65rem 1rem;
+  font-size: 0.85rem;
+  margin: 1.25rem 0 0;
+}
+.banner code {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 5px;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.9em;
+}
+
+/* ---- Section ---- */
+.section {
+  min-width: 0; /* let grid tracks shrink so long titles ellipsize instead of overflowing */
+}
+.section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7rem;
+  padding-bottom: 0.85rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.section-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.section-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.section-dot.shows {
+  background: var(--show);
+  box-shadow: 0 0 12px var(--show);
+}
+.section-dot.movies {
+  background: var(--movie);
+  box-shadow: 0 0 12px var(--movie);
+}
+.section-count {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+}
+
+/* ---- Cards ---- */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.card {
+  display: grid;
+  grid-template-columns: 2.6rem 1fr;
+  align-items: start;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.16s ease, transform 0.16s ease, background 0.16s ease,
+    box-shadow 0.16s ease;
+}
+.card:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-card-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.6);
+}
+.rank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding-top: 0.15rem;
+}
+.rank-num {
+  font-size: 1.3rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  color: var(--text);
+}
+.card:hover .rank-num {
+  color: var(--accent);
+}
+.meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.title {
+  font-size: 0.98rem;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.55rem;
+  color: var(--text-dim);
+  font-size: 0.82rem;
+}
+.sub .airing {
+  color: var(--text);
+  font-weight: 550;
+}
+.sub .sep {
+  color: var(--text-faint);
+}
+.sub .airings-count {
+  color: var(--text-faint);
+}
+.badge {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  flex-shrink: 0;
+}
+.badge.new {
+  color: var(--new);
+  background: var(--new-soft);
+  border: 1px solid rgba(63, 185, 80, 0.4);
+}
+/* Score + CTA sit on their own row below the metadata so cards read well at half width. */
+.card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.15rem;
+}
+.score {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.btn {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #08111f;
+  background: var(--accent);
+  border-radius: 8px;
+  padding: 0.4rem 0.8rem;
+  white-space: nowrap;
+  margin-left: auto;
+  transition: filter 0.16s ease;
+}
+.card:hover .btn {
+  filter: brightness(1.08);
+}
+.btn.ghost {
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--border);
+}
+.btn.disabled {
+  color: var(--text-faint);
+  background: transparent;
+  border: 1px solid var(--border);
+  cursor: default;
+}
+
+/* ---- Empty state ---- */
+.empty {
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  padding: 2rem 1.25rem;
+  text-align: center;
+  color: var(--text-dim);
+  background: var(--bg-elev);
+}
+.empty strong {
+  color: var(--text);
+  font-weight: 650;
+}
+.empty p {
+  font-size: 0.88rem;
+  margin-top: 0.35rem;
+}
+
+/* ---- Footer ---- */
+footer {
+  margin-top: 3.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: 0.8rem;
+}
+footer a {
+  color: var(--text-dim);
+  text-decoration: none;
+}
+footer a:hover {
+  color: var(--accent);
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 900px) {
+  .columns {
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+}
+@media (max-width: 560px) {
+  main {
+    padding: 2rem 1rem 4rem;
+  }
+}
