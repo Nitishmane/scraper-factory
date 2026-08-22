@@ -160,6 +160,13 @@
       <span class="arrow">→</span>
       <div class="node hot">POST /heal<small>FastAPI, traced</small></div>
     </div>
+    <div class="lane"><div class="lane-label">Detect (crash)</div>
+      <div class="node alarm">scrape_run: status = error<small>+ error_detail (Bright Data's own message)</small></div>
+      <span class="arrow">→</span>
+      <div class="node hot">wf_heal_on_bad_run<small>Port event workflow · Triage agent authors description</small></div>
+      <span class="arrow">→</span>
+      <div class="node hot">POST /heal<small>same idempotent endpoint</small></div>
+    </div>
     <div class="lane"><div class="lane-label">Detect (net)</div>
       <div class="node alarm">SigNoz alert<small>drift.detected &gt; 0 · or "data stopped"</small></div>
       <span class="arrow">→</span>
