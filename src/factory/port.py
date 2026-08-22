@@ -121,6 +121,25 @@ def set_scraper_health(scraper_id: str, health: str, **extra: Any) -> None:
         )
 
 
+def patch_run(run_id: str, success: bool, message: str, link: str | None = None) -> None:
+    """Close a self-service action run so it doesn't dangle 'in progress' in Port.
+
+    Never raises -- run bookkeeping must not kill the builder that just did the work.
+    """
+    body: dict[str, Any] = {
+        "status": "SUCCESS" if success else "FAILURE",
+        "logMessage": message,
+    }
+    if link:
+        body["link"] = [link]
+    try:
+        httpx.patch(
+            f"{API}/actions/runs/{run_id}", json=body, headers=_headers(), timeout=30
+        ).raise_for_status()
+    except Exception as exc:
+        telemetry.log().warning("could not patch action run %s: %s", run_id, exc)
+
+
 def create_automation(definition: dict[str, Any]) -> None:
     resp = httpx.post(f"{API}/actions", json=definition, headers=_headers(), timeout=30)
     if resp.status_code in (409, 422):

@@ -20,6 +20,7 @@ serve: ## run the factory API, auto-instrumented so endpoints are traced
 	# telemetry.init() wires logs/metrics/traces in-process (the same path the CLI uses),
 	# so leave OTel's auto-logging OFF here -- enabling it would double-export every record.
 	OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=false \
+	OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
 	opentelemetry-instrument $(PY) -m uvicorn factory.app:app --host 0.0.0.0 --port 8000
 
 run: ## scrape 7 days of guide windows for every provider (use `--days 1` via CLI for cheap dev runs)

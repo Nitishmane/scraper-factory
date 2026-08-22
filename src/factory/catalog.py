@@ -53,33 +53,51 @@ def refresh() -> dict[str, Any]:
     """Scrape the catalog and persist the title -> record-URL map. Returns a summary."""
     with telemetry.tracer().start_as_current_span("catalog.refresh") as span:
         span.set_attribute("target.url", CATALOG_URL)
-        rows, mode, cache_hit = brightdata.run_with_relay(collector_id(), CATALOG_URL)
-        span.set_attribute("fetch.mode", mode)
-        span.set_attribute("relay.cache_hit", cache_hit)
-        span.set_attribute("rows.returned", len(rows))
+        cid = collector_id()
+        try:
+            rows, mode, cache_hit = brightdata.run_with_relay(cid, CATALOG_URL)
+            span.set_attribute("fetch.mode", mode)
+            span.set_attribute("relay.cache_hit", cache_hit)
+            span.set_attribute("rows.returned", len(rows))
 
-        entries = [r for r in rows if r.get("title") and str(r.get("url", "")).startswith("http")]
-        if len(entries) < MIN_ROWS:
-            # philo.com is a JS-rendered SPA: a static relay copy renders empty tiles.
-            # The fetched HTML embeds the catalog as JSON, though -- parse it directly.
-            telemetry.log().warning(
-                "catalog collector yielded %d usable rows (< %d) -- parsing the show "
-                "IDs embedded in the fetched page instead",
-                len(entries),
-                MIN_ROWS,
+            entries = [
+                r for r in rows if r.get("title") and str(r.get("url", "")).startswith("http")
+            ]
+            if len(entries) < MIN_ROWS:
+                # philo.com is a JS-rendered SPA: a static relay copy renders empty tiles.
+                # The fetched HTML embeds the catalog as JSON, though -- parse it directly.
+                telemetry.log().warning(
+                    "catalog collector yielded %d usable rows (< %d) -- parsing the show "
+                    "IDs embedded in the fetched page instead",
+                    len(entries),
+                    MIN_ROWS,
+                )
+                entries = _parse_embedded(brightdata.fetch_html(CATALOG_URL))
+                span.set_attribute("fetch.mode", "embedded_json")
+
+            if len(entries) < MIN_ROWS:
+                telemetry.log().error(
+                    "catalog yielded %d usable rows (< %d) -- keeping the previous map",
+                    len(entries),
+                    MIN_ROWS,
+                )
+                return {"rows": len(rows), "saved": 0, "ok": False}
+
+            state.save_catalog(entries)
+        except Exception as exc:
+            # The shows fetch is the load-bearing path; record its failure on a scrape_run
+            # entity related to the catalog collector, emit the failure metric, then
+            # re-raise so the CLI exit code stays non-zero. (The movies merge below fails
+            # soft on its own and is intentionally left outside this guard.)
+            error_detail = f"{type(exc).__name__}: {exc}"[:500]
+            span.set_attribute("run.error", error_detail)
+            telemetry.metric("run_failures").add(
+                1, {"target.provider": "catalog", "error.type": type(exc).__name__}
             )
-            entries = _parse_embedded(brightdata.fetch_html(CATALOG_URL))
-            span.set_attribute("fetch.mode", "embedded_json")
+            telemetry.log().error("catalog refresh FAILED: %s", error_detail)
+            _write_catalog_error(cid, error_detail)
+            raise
 
-        if len(entries) < MIN_ROWS:
-            telemetry.log().error(
-                "catalog yielded %d usable rows (< %d) -- keeping the previous map",
-                len(entries),
-                MIN_ROWS,
-            )
-            return {"rows": len(rows), "saved": 0, "ok": False}
-
-        state.save_catalog(entries)
         # Movies are a separate page and an additive merge: a movies-page failure must not
         # sink the shows refresh, so it logs a warning and returns 0 rather than raising.
         movies = _refresh_movies()
@@ -95,6 +113,34 @@ def refresh() -> dict[str, Any]:
             "movies": movies,
             "ok": True,
         }
+
+
+def _write_catalog_error(cid: str, error_detail: str) -> None:
+    """Record a failed catalog refresh as a scrape_run entity related to the collector.
+
+    Never raises -- a Port outage must not mask the underlying scrape failure being re-raised.
+    """
+    import datetime as _dt
+    import uuid as _uuid
+
+    from . import port
+
+    run_id = f"run_catalog_{_uuid.uuid4().hex[:8]}"
+    try:
+        port.upsert_entity(
+            "scrape_run",
+            identifier=run_id,
+            title=f"catalog {_dt.datetime.now().strftime('%H:%M:%S')}",
+            properties={
+                "started_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+                "status": "error",
+                "rows_returned": 0,
+                "error_detail": error_detail,
+            },
+            relations={"scraper": cid},
+        )
+    except Exception as exc:
+        telemetry.log().warning("could not write catalog scrape_run to Port: %s", exc)
 
 
 def _refresh_movies() -> int:

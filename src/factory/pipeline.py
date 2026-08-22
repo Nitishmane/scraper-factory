@@ -204,90 +204,113 @@ def run_once(
 
         rows: list[dict[str, Any]] = []
         empty_pages = 0
-        for page in pages:
-            with telemetry.tracer().start_as_current_span("scrape.fetch") as fetch:
-                fetch_started = time.perf_counter()
-                channel_id = _channel_id(page["url"])
-                fetch.set_attribute("target.provider", provider)
-                fetch.set_attribute("channel.name", page["channel"])
-                fetch.set_attribute("channel.id", channel_id)
-                fetch.set_attribute("channel.url", page["url"])
-                page_rows, mode, cache_hit = _scrape_page(cid, page["url"])
-                fetch_secs = time.perf_counter() - fetch_started
-                fetch.set_attribute("fetch.mode", mode)
-                fetch.set_attribute("channel.rows", len(page_rows))
-                fetch.set_attribute("relay.cache_hit", cache_hit)
-                telemetry.metric("fetch_duration").record(
-                    fetch_secs, {"target.provider": provider, "fetch.mode": mode}
+        try:
+            for page in pages:
+                with telemetry.tracer().start_as_current_span("scrape.fetch") as fetch:
+                    fetch_started = time.perf_counter()
+                    channel_id = _channel_id(page["url"])
+                    fetch.set_attribute("target.provider", provider)
+                    fetch.set_attribute("channel.name", page["channel"])
+                    fetch.set_attribute("channel.id", channel_id)
+                    fetch.set_attribute("channel.url", page["url"])
+                    page_rows, mode, cache_hit = _scrape_page(cid, page["url"])
+                    fetch_secs = time.perf_counter() - fetch_started
+                    fetch.set_attribute("fetch.mode", mode)
+                    fetch.set_attribute("channel.rows", len(page_rows))
+                    fetch.set_attribute("relay.cache_hit", cache_hit)
+                    telemetry.metric("fetch_duration").record(
+                        fetch_secs, {"target.provider": provider, "fetch.mode": mode}
+                    )
+                    telemetry.metric("pages_fetched").add(
+                        1, {"target.provider": provider, "fetch.mode": mode}
+                    )
+                    telemetry.metric("rows_extracted").add(
+                        len(page_rows), {"target.provider": provider}
+                    )
+                    if not page_rows:
+                        empty_pages += 1
+                    for row in page_rows:
+                        row["channel"] = page["channel"]
+                    rows.extend(page_rows)
+
+            with telemetry.tracer().start_as_current_span("scrape.extract"):
+                cutoff = (
+                    dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=days)
+                ).strftime("%Y-%m-%dT%H:%M:00Z")
+                for row in rows:
+                    _parse_card_times(row)
+                rows = [
+                    r
+                    for r in _dedupe(rows)
+                    if not r.get("start_utc") or r["start_utc"] <= cutoff
+                ]
+                span.set_attribute("rows.returned", len(rows))
+
+            with telemetry.tracer().start_as_current_span("scrape.validate"):
+                drift = detect.detect(
+                    provider,
+                    cid,
+                    rows,
+                    pages=len(pages),
+                    empty_pages=empty_pages,
+                    expected_channels=len(pages),
                 )
-                telemetry.metric("pages_fetched").add(
-                    1, {"target.provider": provider, "fetch.mode": mode}
+                span.set_attribute("schema.hash", detect.schema_hash(rows))
+                span.set_attribute("drift.detected", drift.detected)
+
+            if not drift.detected:
+                # Guide rows feed the ranker; don't poison it with a drifted run's output.
+                state.save_guide_rows(provider, rows)
+                telemetry.log().info(
+                    "scrape run %s for %s: kept %d rows from %d page(s), no drift -- persisted",
+                    run_id, provider, len(rows), len(pages),
                 )
-                telemetry.metric("rows_extracted").add(
-                    len(page_rows), {"target.provider": provider}
+            else:
+                telemetry.log().warning(
+                    "scrape run %s for %s DRIFTED (%s): %d rows from %d page(s) NOT persisted",
+                    run_id, provider, drift.description, len(rows), len(pages),
                 )
-                if not page_rows:
-                    empty_pages += 1
-                for row in page_rows:
-                    row["channel"] = page["channel"]
-                rows.extend(page_rows)
 
-        with telemetry.tracer().start_as_current_span("scrape.extract"):
-            cutoff = (
-                dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=days)
-            ).strftime("%Y-%m-%dT%H:%M:00Z")
-            for row in rows:
-                _parse_card_times(row)
-            rows = [
-                r
-                for r in _dedupe(rows)
-                if not r.get("start_utc") or r["start_utc"] <= cutoff
-            ]
-            span.set_attribute("rows.returned", len(rows))
+            duration_ms = (time.perf_counter() - started) * 1000
+            telemetry.metric("run_duration").record(duration_ms, {"target.provider": provider})
+            trace_url = telemetry.trace_url()
 
-        with telemetry.tracer().start_as_current_span("scrape.validate"):
-            drift = detect.detect(
-                provider,
-                cid,
-                rows,
-                pages=len(pages),
-                empty_pages=empty_pages,
-                expected_channels=len(pages),
+            _write_run(run_id, cid, provider, rows, len(pages), drift, trace_url)
+
+            if drift.detected:
+                # Fast path: this Port write fires the automation that invokes the healer.
+                port.set_scraper_health(cid, "drifting", title=provider, collector_id=cid)
+            else:
+                # A clean run clears any stale broken/drifting flag from a prior failure.
+                # "healthy" triggers no automation, so this self-heals the health field
+                # without firing the repair path.
+                port.set_scraper_health(cid, "healthy", title=provider, collector_id=cid)
+            return {
+                "run_id": run_id,
+                "provider": provider,
+                "channels": len(pages),
+                "rows": len(rows),
+                "drift": drift.detected,
+                "drift_description": drift.description,
+                "trace_url": trace_url,
+            }
+        except Exception as exc:
+            # A run that raised leaves no drift verdict and no persisted rows. Record the
+            # failure on the scrape_run entity so it is visible in Port, emit the failure
+            # metric, then re-raise so CLI exit codes stay non-zero.
+            error_detail = f"{type(exc).__name__}: {exc}"[:500]
+            span.set_attribute("run.error", error_detail)
+            telemetry.metric("run_failures").add(
+                1, {"target.provider": provider, "error.type": type(exc).__name__}
             )
-            span.set_attribute("schema.hash", detect.schema_hash(rows))
-            span.set_attribute("drift.detected", drift.detected)
-
-        if not drift.detected:
-            # Guide rows feed the ranker; don't poison it with a drifted run's output.
-            state.save_guide_rows(provider, rows)
-            telemetry.log().info(
-                "scrape run %s for %s: kept %d rows from %d page(s), no drift -- persisted",
-                run_id, provider, len(rows), len(pages),
+            telemetry.log().error(
+                "scrape run %s for %s FAILED: %s", run_id, provider, error_detail
             )
-        else:
-            telemetry.log().warning(
-                "scrape run %s for %s DRIFTED (%s): %d rows from %d page(s) NOT persisted",
-                run_id, provider, drift.description, len(rows), len(pages),
+            _write_run(
+                run_id, cid, provider, rows, len(pages), None,
+                telemetry.trace_url(), status="error", error_detail=error_detail,
             )
-
-        duration_ms = (time.perf_counter() - started) * 1000
-        telemetry.metric("run_duration").record(duration_ms, {"target.provider": provider})
-        trace_url = telemetry.trace_url()
-
-        _write_run(run_id, cid, provider, rows, len(pages), drift, trace_url)
-
-        if drift.detected:
-            # Fast path: this Port write fires the automation that invokes the healer.
-            port.set_scraper_health(cid, "drifting", title=provider, collector_id=cid)
-        return {
-            "run_id": run_id,
-            "provider": provider,
-            "channels": len(pages),
-            "rows": len(rows),
-            "drift": drift.detected,
-            "drift_description": drift.description,
-            "trace_url": trace_url,
-        }
+            raise
 
 
 def _scrape_page(cid: str, url: str) -> tuple[list[dict[str, Any]], str, bool]:
@@ -339,9 +362,16 @@ def _write_run(
     provider: str,
     rows: list[dict[str, Any]],
     channels_scraped: int,
-    drift: detect.Drift,
+    drift: detect.Drift | None,
     trace_url: str | None,
+    status: str | None = None,
+    error_detail: str | None = None,
 ) -> None:
+    # drift is None on the failure path (no verdict was reached); callers pass an explicit
+    # status="error" then. Otherwise the status is derived from the drift verdict.
+    drift_detected = bool(drift and drift.detected)
+    if status is None:
+        status = "drift" if drift_detected else "success"
     try:
         port.upsert_entity(
             "scrape_run",
@@ -349,12 +379,13 @@ def _write_run(
             title=f"{provider} {dt.datetime.now().strftime('%H:%M:%S')}",
             properties={
                 "started_at": dt.datetime.now(dt.timezone.utc).isoformat(),
-                "status": "drift" if drift.detected else "success",
+                "status": status,
                 "rows_returned": len(rows),
                 "windows_scraped": channels_scraped,
                 "schema_hash": detect.schema_hash(rows),
-                "drift_detected": drift.detected,
+                "drift_detected": drift_detected,
                 "trace_url": trace_url,
+                "error_detail": error_detail,
             },
             relations={"scraper": cid},
         )

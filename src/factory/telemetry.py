@@ -97,6 +97,10 @@ def _build_metrics() -> None:
         drift_detected=m.create_counter(
             "scraper.drift.detected", description="Drift detections"
         ),
+        run_failures=m.create_counter(
+            "scraper.run.failures",
+            description="Scrape runs that raised (attrs target.provider, error.type)",
+        ),
         heal_attempts=m.create_counter("scraper.heal.attempts", description="Heal attempts"),
         heal_success=m.create_counter("scraper.heal.success", description="Heals promoted"),
         verify_pass=m.create_counter("scraper.verify.pass", description="Fixture gate passes"),

@@ -6,6 +6,10 @@ what makes Port's automation calling /heal visible as a span rather than a READM
 Endpoints:
   POST /heal        <- Port automation (health == drifting) AND the SigNoz alert webhook
   POST /build       <- Port self-service action: takes a brief, creates a verified scraper
+  POST /feature     <- Port self-service action: the Builder turns a requirement into a PR
+  POST /run         <- Port self-service action: scrape one or all providers in the background
+  POST /catalog     <- Port self-service action: refresh the Philo record-link catalog
+  POST /publish     <- Port self-service action: rank + push the top-20 to Port
   GET  /top20       <- the product: clickable top-20 upcoming titles, record links included
   GET  /api/top20   <- same, as JSON
   GET  /healthz
@@ -14,14 +18,15 @@ from __future__ import annotations
 
 import datetime as dt
 import html as html_lib
+import re
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI
+from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from . import brightdata, pipeline, port, rank, telemetry
-from .agents import healer, verifier
+from . import brightdata, catalog, pipeline, port, publish, rank, telemetry
+from .agents import builder, healer, verifier
 
 telemetry.init()
 app = FastAPI(title="Scraper Factory")
@@ -138,6 +143,10 @@ def heal(req: HealRequest, background: BackgroundTasks) -> dict[str, Any]:
     """
     provider, collector_id, drift = _extract(req)
     if not provider or not collector_id:
+        # Port Workflow webhook nodes may deliver unresolved/empty template fields; the
+        # catalog itself is the source of truth, so fall back to the newest bad run there.
+        provider, collector_id, drift = _resolve_bad_run_from_port()
+    if not provider or not collector_id:
         return {"accepted": False, "reason": "could not resolve provider/collector_id"}
 
     telemetry.log().info("heal request accepted for %s (%s)", provider, collector_id)
@@ -183,6 +192,192 @@ def build(req: BuildRequest) -> dict[str, Any]:
             "verified": bool(verdict and verdict.passed),
             "trace_url": telemetry.trace_url(),
         }
+
+
+@app.post("/feature")
+async def feature(request: Request, background: BackgroundTasks) -> dict[str, Any]:
+    """Port self-service action backend: a requirement in, a pull request out.
+
+    The Builder runs locally (operator decision: Anthropic credentials never leave this
+    machine) -- headless Claude Code edits a scratch clone, deterministic code opens the
+    PR, and the CI gate + human merge stay the promotion gates.
+    """
+    body = await request.json()
+    title, details, kind, run_id = _feature_fields(body)
+    if not title or not details:
+        return {"accepted": False, "reason": "could not resolve title/details from payload"}
+
+    req_id = "req_" + re.sub(r"[^A-Za-z0-9_-]", "", run_id or dt.datetime.now().strftime("%Y%m%d%H%M%S"))
+    port.upsert_entity(
+        "requirement",
+        identifier=req_id,
+        title=title,
+        properties={"description": details, "kind": kind, "status": "building"},
+    )
+    telemetry.log().info("feature request accepted: %s (%s)", title, req_id)
+    background.add_task(builder.build_feature, req_id, title, details, kind, run_id)
+    return {"accepted": True, "requirement": req_id}
+
+
+def _resolve_bad_run_from_port() -> tuple[str | None, str | None, str | None]:
+    """Newest error/drift scrape_run from the last hour -> (provider, collector_id, drift).
+
+    Run identifiers encode the provider (run_<provider>_<hash>) and the scraper relation
+    carries the collector id, so any trigger — however empty its payload — can be resolved
+    against the Context Lake. Returns (None, None, None) when nothing recent is bad.
+    """
+    try:
+        import httpx
+
+        resp = httpx.get(
+            f"{port.API}/blueprints/scrape_run/entities",
+            headers=port._headers(),
+            timeout=20,
+        )
+        resp.raise_for_status()
+        cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1)).isoformat()
+        bad = [
+            e
+            for e in resp.json().get("entities", [])
+            if (e.get("createdAt") or "") >= cutoff
+            and (
+                e["properties"].get("status") == "error"
+                or e["properties"].get("drift_detected")
+            )
+        ]
+        if not bad:
+            return None, None, None
+        newest = max(bad, key=lambda e: e.get("createdAt") or "")
+        match = re.match(r"run_([a-z]+)_", newest["identifier"])
+        provider = match.group(1) if match else None
+        collector = (newest.get("relations") or {}).get("scraper")
+        detail = newest["properties"].get("error_detail") or "bad run detected via Port"
+        return provider, collector, detail
+    except Exception as exc:
+        telemetry.log().warning("could not resolve bad run from Port: %s", exc)
+        return None, None, None
+
+
+def _feature_fields(body: dict[str, Any]) -> tuple[str | None, str | None, str, str | None]:
+    """Tolerate both a flat test payload and Port's nested action-run webhook body."""
+    def _find(obj: Any, key: str) -> Any:
+        if isinstance(obj, dict):
+            if key in obj and not isinstance(obj[key], (dict, list)):
+                return obj[key]
+            for v in obj.values():
+                found = _find(v, key)
+                if found is not None:
+                    return found
+        return None
+
+    # User inputs live in some "properties" dict that has our field names.
+    def _props(obj: Any) -> dict[str, Any] | None:
+        if isinstance(obj, dict):
+            props = obj.get("properties")
+            if isinstance(props, dict) and "title" in props and "details" in props:
+                return props
+            for v in obj.values():
+                found = _props(v)
+                if found:
+                    return found
+        return None
+
+    props = _props(body) or body
+    title = props.get("title")
+    details = props.get("details")
+    kind = props.get("kind") or "other"
+    run_id = _find(body, "runId") or _find(body, "run_id") or _find(body, "port_run_id")
+    return title, details, kind, str(run_id) if run_id else None
+
+
+@app.post("/run")
+async def run(request: Request, background: BackgroundTasks) -> dict[str, Any]:
+    """Port self-service action backend: scrape one provider or all, in the background.
+
+    Tolerant body like /feature: {provider?, days?, max_channels?} either flat or nested
+    under a Port action-run "properties" dict. An omitted/empty/"all" provider fans out to
+    every provider in pipeline.PROVIDERS. Returns immediately; the run happens in ONE
+    background task that iterates providers sequentially -- Bright Data budget and the relay
+    cache both assume providers don't scrape concurrently.
+    """
+    body = await request.json()
+    provider, days, max_channels = _run_fields(body)
+    providers = (
+        list(pipeline.PROVIDERS)
+        if not provider or provider.lower() == "all"
+        else [provider]
+    )
+    telemetry.log().info(
+        "run request accepted: providers=%s days=%d", providers, days
+    )
+
+    def _scrape_all() -> None:
+        for name in providers:
+            try:
+                pipeline.run_once(name, days=days, max_channels=max_channels)
+            except Exception as exc:  # the error scrape_run write is the durable record
+                telemetry.log().error("background run for %s failed: %s", name, exc)
+
+    background.add_task(_scrape_all)
+    return {"accepted": True, "providers": providers, "days": days}
+
+
+@app.post("/catalog")
+def refresh_catalog(background: BackgroundTasks) -> dict[str, Any]:
+    """Port self-service action backend: refresh the Philo record-link catalog in the background."""
+    telemetry.log().info("catalog refresh request accepted")
+
+    def _refresh() -> None:
+        try:
+            catalog.refresh()
+        except Exception as exc:  # the catalog error scrape_run write is the durable record
+            telemetry.log().error("background catalog refresh failed: %s", exc)
+
+    background.add_task(_refresh)
+    return {"accepted": True}
+
+
+@app.post("/publish")
+def publish_top20(background: BackgroundTasks) -> dict[str, Any]:
+    """Port self-service action backend: rank + push the top-20 to Port, in the background."""
+    telemetry.log().info("publish request accepted")
+
+    def _publish() -> None:
+        try:
+            publish.push()
+        except Exception as exc:
+            telemetry.log().error("background publish failed: %s", exc)
+
+    background.add_task(_publish)
+    return {"accepted": True}
+
+
+def _run_fields(body: dict[str, Any]) -> tuple[str | None, int, int | None]:
+    """Pull provider/days/max_channels from a flat body or a Port nested "properties" dict."""
+    def _props(obj: Any) -> dict[str, Any]:
+        if isinstance(obj, dict):
+            props = obj.get("properties")
+            if isinstance(props, dict):
+                return props
+            for v in obj.values():
+                found = _props(v)
+                if found:
+                    return found
+        return {}
+
+    src = body if isinstance(body, dict) else {}
+    props = _props(src) or src
+    provider = props.get("provider") or src.get("provider")
+
+    def _int(val: Any, default: int | None) -> int | None:
+        try:
+            return int(val)
+        except (TypeError, ValueError):
+            return default
+
+    days = _int(props.get("days", src.get("days")), 1) or 1
+    max_channels = _int(props.get("max_channels", src.get("max_channels")), None)
+    return (str(provider) if provider else None), days, max_channels
 
 
 def _extract(req: HealRequest) -> tuple[str | None, str | None, str | None]:

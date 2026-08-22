@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scraper Factory — the platform</title>
+<style>
+  :root { color-scheme: dark;
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c222b; --line:#30363d; --text:#e6edf3; --muted:#8b949e;
+    --blue:#58a6ff; --green:#3fb950; --yellow:#d29922; --red:#f85149; --purple:#bc8cff; --pink:#ff7b9d; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--text);
+         font:15px/1.55 -apple-system,"Segoe UI",sans-serif; padding:0 0 5rem; }
+  main { max-width:1080px; margin:0 auto; padding:0 1rem; }
+  a { color:var(--blue); }
+
+  nav { position:sticky; top:0; z-index:10; background:rgba(13,17,23,.92);
+        border-bottom:1px solid var(--line); backdrop-filter:blur(6px); }
+  nav .in { max-width:1080px; margin:0 auto; display:flex; gap:.2rem; align-items:center;
+            padding:.6rem 1rem; flex-wrap:wrap; }
+  nav .brand { font-weight:800; margin-right:.8rem; letter-spacing:-.01em; }
+  nav .brand .dot { color:var(--green); }
+  nav a { color:var(--muted); text-decoration:none; font-size:.85rem; font-weight:600;
+          padding:.35rem .7rem; border-radius:8px; }
+  nav a:hover { color:var(--text); background:var(--panel); }
+  nav a.active { color:var(--text); background:var(--panel); }
+
+  h1 { font-size:1.9rem; margin:2.4rem 0 .4rem; letter-spacing:-.02em; }
+  .lede { color:var(--muted); font-size:1.05rem; max-width:48rem; }
+  h2 { font-size:1.3rem; margin:3rem 0 .9rem; padding-bottom:.4rem; border-bottom:1px solid var(--line); }
+
+  .pillars { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:.8rem; }
+  .pcard { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:1.1rem 1.2rem; }
+  .pcard .top { display:flex; align-items:center; gap:.55rem; margin-bottom:.45rem; }
+  .pcard .glyph { width:30px; height:30px; border-radius:8px; display:flex; align-items:center;
+                  justify-content:center; font-size:.9rem; font-weight:800; flex-shrink:0;
+                  background:#173a2a; color:var(--green); }
+  .pcard b { font-size:.98rem; }
+  .pcard p { color:var(--muted); font-size:.85rem; }
+  .pcard code { color:var(--text); font-size:.78rem; }
+
+  .tablewrap { overflow-x:auto; border:1px solid var(--line); border-radius:14px; }
+  table { width:100%; border-collapse:collapse; font-size:.85rem; min-width:640px; }
+  th, td { text-align:left; padding:.6rem .8rem; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; font-size:.72rem; text-transform:uppercase; letter-spacing:.05em;
+       background:var(--panel2); }
+  tr:last-child td { border-bottom:none; }
+  code { font-size:.8rem; color:var(--text); background:var(--panel); padding:.05rem .3rem; border-radius:5px; }
+  .status { display:inline-block; font-size:.68rem; font-weight:700; border:1px solid var(--green);
+            color:var(--green); border-radius:999px; padding:.05rem .5rem; }
+
+  .signals { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:.8rem; }
+  .sig { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:1rem 1.1rem; }
+  .sig b { font-size:.9rem; }
+  .sig .where { color:var(--muted); font-size:.72rem; margin:.15rem 0 .6rem; }
+  .sig ul { list-style:none; padding:0; font-size:.8rem; }
+  .sig li { padding:.12rem 0; }
+  .sig li span { color:var(--muted); }
+
+  .schemas { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:.8rem; }
+  .schema { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:1rem 1.1rem; }
+  .schema b { font-size:.9rem; }
+  .schema .where { color:var(--muted); font-size:.72rem; margin:.1rem 0 .55rem; }
+  .schema ul { list-style:none; padding:0; font-size:.8rem; }
+  .schema li { padding:.12rem 0; }
+  .schema li span { color:var(--muted); }
+
+  .note { background:var(--panel); border-left:3px solid var(--yellow); border-radius:8px;
+          padding:.9rem 1.1rem; font-size:.9rem; margin-top:1rem; color:var(--text); }
+  footer { max-width:1080px; margin:3rem auto 0; padding:1.5rem 1rem 0; border-top:1px solid var(--line);
+           color:var(--muted); font-size:.82rem; }
+</style>
+</head>
+<body>
+<nav><div class="in">
+  <span class="brand">Scraper<span class="dot">.</span>Factory</span>
+  <a href="index.html">Story</a>
+  <a href="architecture.html">Architecture</a>
+  <a href="workforce.html">Workforce</a>
+  <a href="platform.html" class="active">Platform</a>
+</div></nav>
+
+<main>
+  <h1>The platform underneath</h1>
+  <p class="lede">Three products carry the weight: <b>Port</b> is the control plane, <b>SigNoz</b> is the
+  telemetry, and <b>Bright Data</b> is the scraping. Everything here is provisioned as code &mdash;
+  <code>scripts/bootstrap_port.py</code> and <code>scripts/bootstrap_signoz.py</code> are idempotent and
+  re-runnable, with one documented UI step left over.</p>
+
+  <h2>Port — the control plane, pillar by pillar</h2>
+  <div class="pillars">
+    <div class="pcard"><div class="top"><span class="glyph">📚</span><b>Catalog</b></div>
+      <p>Seven blueprints model the whole factory: <code>data_source</code>, <code>scraper</code>,
+      <code>scrape_run</code>, <code>heal_event</code>, <code>ranked_title</code>, <code>requirement</code>,
+      and <code>factory_deployment</code> &mdash; plus two <code>service</code> entities.</p></div>
+    <div class="pcard"><div class="top"><span class="glyph">🌊</span><b>Context Lake</b></div>
+      <p>The product itself lives here: 20 <code>ranked_title</code> entities
+      (<code>show_01..10</code>, <code>movie_01..10</code>). The webapp reads them server-side &mdash;
+      the same lake the operator dashboard and the AI agents see.</p></div>
+    <div class="pcard"><div class="top"><span class="glyph">🎛️</span><b>Actions</b></div>
+      <p>Self-service: <code>request_data_source</code> (brief → verified scraper),
+      <code>submit_feature_request</code> (requirement → PR via the local builder), and the
+      operate-now buttons <code>run_scrape_now</code> / <code>refresh_catalog_now</code> /
+      <code>publish_now</code>.</p></div>
+    <div class="pcard"><div class="top"><span class="glyph">⚡</span><b>Automations &amp; Workflows</b></div>
+      <p><code>invoke_healer_on_drift</code> (drift → <code>/heal</code>); scheduled
+      <code>wf_scheduled_scrape</code> (08:00 UTC → <code>/run</code>) and
+      <code>wf_scheduled_catalog</code> (07:30 → <code>/catalog</code>); event
+      <code>wf_publish_on_success</code> and <code>wf_heal_on_bad_run</code>. Port <b>operates</b>
+      the factory (see below).</p></div>
+    <div class="pcard"><div class="top"><span class="glyph">🏅</span><b>Scorecards</b></div>
+      <p><code>scraper_reliability</code>: Basic → Bronze (verified today) → Silver (verify passing) →
+      Gold (healthy + verified). Computed from properties the pipeline writes &mdash; trust as data.</p></div>
+    <div class="pcard"><div class="top"><span class="glyph">🖥️</span><b>Dashboards</b></div>
+      <p><b>Factory Operator</b>: a scrapers-by-health pie, a heal-event table, a ranked-titles table with
+      record links, an architecture note, and the embedded SigNoz dashboard.</p></div>
+    <div class="pcard"><div class="top"><span class="glyph">🤖</span><b>AI agents</b></div>
+      <p>Four factory agents &mdash; Triage, Heal Explainer, On-Call Assistant, Catalog Coverage &mdash;
+      registered as <code>_ai_agent</code> entities. See the <a href="workforce.html">workforce page</a>.</p></div>
+    <div class="pcard"><div class="top"><span class="glyph">⚙️</span><b>All as code</b></div>
+      <p><code>bootstrap_port.py</code> creates every blueprint, action, automation, scorecard, dashboard,
+      and agent above &mdash; idempotent, no UI clicks, validated against the live <code>api.getport.io</code>.</p></div>
+  </div>
+
+  <h2>Port operates the factory</h2>
+  <p class="lede" style="margin-bottom:1rem">Port doesn't just catalogue the factory &mdash; it
+  <b>runs</b> it. Scheduled and event workflows POST to the FastAPI service, which does the work in
+  the background and returns <code>202</code> at once. <code>make run</code> and friends stay as dev
+  conveniences.</p>
+  <div class="tablewrap">
+  <table>
+    <tr><th>Port trigger</th><th>When</th><th>Calls</th></tr>
+    <tr><td><b>wf_scheduled_catalog</b></td><td>daily 07:30 UTC (cron)</td><td><code>POST /catalog</code> — refresh the record-URL map</td></tr>
+    <tr><td><b>wf_scheduled_scrape</b></td><td>daily 08:00 UTC (cron)</td><td><code>POST /run</code> — scrape the guide, all providers</td></tr>
+    <tr><td><b>wf_publish_on_success</b></td><td>a scrape_run lands <code>status = success</code></td><td><code>POST /publish</code> — push the ranking to the Context Lake</td></tr>
+    <tr><td><b>wf_heal_on_bad_run</b></td><td>a scrape_run lands <code>status = error</code> / <code>drift</code></td><td><code>POST /heal</code> — Triage authors the drift description</td></tr>
+    <tr><td><b>run_scrape_now / refresh_catalog_now / publish_now</b></td><td>operator presses a button</td><td>same endpoints, on demand</td></tr>
+  </table>
+  </div>
+  <p class="note">New endpoints <code>POST /run</code>, <code>/catalog</code>, <code>/publish</code>
+  each return <code>202</code> and run as background tasks, so a Port call never blocks on a scrape.
+  And <b>failures are now visible in Port</b>: <code>scrape_run</code> entities record
+  <code>status = "error"</code> plus an <code>error_detail</code> field carrying Bright Data's actual
+  error text, so <code>wf_heal_on_bad_run</code> can react and the dashboard shows <em>why</em> a run
+  failed &mdash; previously a failed run simply produced no rows and was invisible.</p>
+
+  <h2>SigNoz — the telemetry</h2>
+  <p class="lede" style="margin-bottom:1rem">Three correlated signals, on both the pipeline and the FastAPI
+  endpoints. Running under <code>opentelemetry-instrument</code> means even Port's automation calling
+  <code>/heal</code> shows up as a span.</p>
+  <div class="signals">
+    <div class="sig"><b>Traces</b><div class="where">spans, OTLP :4318</div>
+      <ul>
+        <li><code>scrape.run</code> <span>→ scrape.fetch × N</span></li>
+        <li><code>scrape.extract / validate</code></li>
+        <li><code>scrape.heal.reprompt</code></li>
+        <li><code>scrape.verify.fixture</code></li>
+        <li><code>catalog.refresh · rank.compute</code></li>
+        <li><code>builder.feature · factory.build</code></li>
+      </ul></div>
+    <div class="sig"><b>Metrics</b><div class="where">counters + histograms</div>
+      <ul>
+        <li><code>scraper.drift.detected</code> <span>← the alert</span></li>
+        <li><code>scraper.heal.attempts / success</code></li>
+        <li><code>scraper.verify.pass</code></li>
+        <li><code>scraper.field.null_rate</code></li>
+        <li><code>relay.cache</code> <span>hit/miss</span></li>
+        <li><code>ranker.catalog_match_rate</code></li>
+      </ul></div>
+    <div class="sig"><b>Logs</b><div class="where">trace-correlated</div>
+      <ul>
+        <li>drift description <span>verbatim</span></li>
+        <li>heal prompt <span>what was sent</span></li>
+        <li>verifier diff <span>why it passed/failed</span></li>
+        <li><span>each carries trace_id / span_id</span></li>
+      </ul></div>
+    <div class="sig"><b>Dashboard + alert</b><div class="where">provisioned by bootstrap_signoz.py</div>
+      <ul>
+        <li>11-widget dashboard</li>
+        <li>alert: <code>drift.detected &gt; 0</code></li>
+        <li><span>5-min window, checked every minute</span></li>
+        <li>"data stopped" → heal webhook</li>
+      </ul></div>
+  </div>
+
+  <h2>Bright Data — collectors, healing, and the relay</h2>
+  <div class="note">
+    <b>The policy that shaped the design:</b> Bright Data blocks collector runs against streaming-media
+    domains (confirmed and endorsed by their support, 2026-08-22). So production scraping is a
+    <b>fetch/extract split</b>: the Web Unlocker fetches the live page and archives it, and the collector
+    extracts from a tunneled copy in <code>fixtures/relay/</code>. The code retries a direct run first, so
+    if the policy ever lifts the relay drops out on its own. See diagram 2 on the
+    <a href="architecture.html">architecture page</a>.
+  </div>
+  <div class="tablewrap" style="margin-top:1rem">
+  <table>
+    <tr><th>Collector</th><th>Target</th><th>Self-heal</th><th>Promotion gate</th></tr>
+    <tr>
+      <td><b>channel-schedule</b> <span class="status">healthy</span><br><span style="color:var(--muted);font-size:.75rem">one shared collector</span></td>
+      <td>Any <code>streamingtvguides.com/Channel/&lt;ID&gt;</code> page &mdash; every channel shares the same structure</td>
+      <td><code>scraper heal</code> re-prompts semantically on drift</td>
+      <td>Frozen fixture: <code>channel.html</code> + <code>channel.expected.json</code> diff</td>
+    </tr>
+    <tr>
+      <td><b>philo-catalog</b> <span class="status">healthy</span></td>
+      <td><code>philo.com/go/allshows</code> (+ <code>/go/allmovies</code> merged via embedded-JSON)</td>
+      <td>n/a &mdash; catalog changes daily by design</td>
+      <td>Row-count band (<code>catalog.MIN_ROWS</code>), no fixture</td>
+    </tr>
+  </table>
+  </div>
+  <p class="note" style="border-left-color:var(--muted)">philo.com is a JS-rendered SPA: the collector sees
+  an empty static copy, so <code>catalog._parse_embedded()</code> falls back to the show IDs embedded as JSON
+  in the fetched page. Shows come from <code>/go/allshows</code>; movies are an additive merge from
+  <code>/go/allmovies</code> (~739 titles mapped in total).</p>
+
+  <h2>The schemas</h2>
+  <div class="schemas">
+    <div class="schema"><b>guide_row</b><div class="where">SQLite · out/factory.db</div>
+      <ul><li>provider · channel · title <span>keys</span></li>
+          <li>episode_title · kind · category</li>
+          <li>start_utc · end_utc <span>computed locally</span></li>
+          <li>start_raw <span>raw string — the drift canary</span></li>
+          <li>is_new <span>NEW/LIVE badge</span></li></ul></div>
+    <div class="schema"><b>catalog</b><div class="where">SQLite</div>
+      <ul><li>title_norm <span>match key</span></li>
+          <li>title · url <span>philo.com/player/show/&lt;id&gt;</span></li></ul></div>
+    <div class="schema"><b>ranked_title</b><div class="where">Port Context Lake · read by the webapp</div>
+      <ul><li>rank · show_title · kind · score</li>
+          <li>next_airing_at · channel · provider</li>
+          <li>is_new · airings</li>
+          <li>record_url <span>the one-click Record link</span></li></ul></div>
+    <div class="schema"><b>Port blueprints</b><div class="where">Context Lake · api.getport.io</div>
+      <ul><li>data_source <span>operator briefs</span></li>
+          <li>scraper <span>health · verify_status · prompt</span></li>
+          <li>scrape_run <span>rows · drift · trace_url</span></li>
+          <li>heal_event <span>outcome · heal_prompt</span></li>
+          <li>ranked_title <span>rank · record_url</span></li>
+          <li>requirement <span>status · branch · pr_url</span></li>
+          <li>factory_deployment <span>url · commit_sha</span></li></ul></div>
+    <div class="schema"><b>fixtures/</b><div class="where">frozen inputs — never regenerated to pass</div>
+      <ul><li>channel.html <span>real page, trimmed to 30 cards</span></li>
+          <li>channel.expected.json <span>hand-checked truth</span></li>
+          <li>channel.mutated.html <span>same meaning, structure scrambled</span></li>
+          <li>relay/ <span>archived scrape inputs</span></li></ul></div>
+    <div class="schema"><b>services</b><div class="where">Port service blueprint</div>
+      <ul><li>scraper_factory <span>criticality: high</span></li>
+          <li>top20_webapp <span>criticality: medium</span></li></ul></div>
+  </div>
+
+  <footer>
+    Port shows <b>fleet state</b>; SigNoz shows <b>telemetry</b> &mdash; catalog versus time series, each
+    answering a question the other can't. The one remaining UI step: embedding the SigNoz dashboard as an
+    iframe widget on the Factory Operator page; everything else is provisioned by the bootstrap scripts.
+  </footer>
+</main>
+</body>
+</html>

@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scraper Factory — the agent workforce</title>
+<style>
+  :root { color-scheme: dark;
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c222b; --line:#30363d; --text:#e6edf3; --muted:#8b949e;
+    --blue:#58a6ff; --green:#3fb950; --yellow:#d29922; --red:#f85149; --purple:#bc8cff; --pink:#ff7b9d; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--text);
+         font:15px/1.55 -apple-system,"Segoe UI",sans-serif; padding:0 0 5rem; }
+  main { max-width:1080px; margin:0 auto; padding:0 1rem; }
+  a { color:var(--blue); }
+
+  nav { position:sticky; top:0; z-index:10; background:rgba(13,17,23,.92);
+        border-bottom:1px solid var(--line); backdrop-filter:blur(6px); }
+  nav .in { max-width:1080px; margin:0 auto; display:flex; gap:.2rem; align-items:center;
+            padding:.6rem 1rem; flex-wrap:wrap; }
+  nav .brand { font-weight:800; margin-right:.8rem; letter-spacing:-.01em; }
+  nav .brand .dot { color:var(--green); }
+  nav a { color:var(--muted); text-decoration:none; font-size:.85rem; font-weight:600;
+          padding:.35rem .7rem; border-radius:8px; }
+  nav a:hover { color:var(--text); background:var(--panel); }
+  nav a.active { color:var(--text); background:var(--panel); }
+
+  h1 { font-size:1.9rem; margin:2.4rem 0 .4rem; letter-spacing:-.02em; }
+  .lede { color:var(--muted); font-size:1.05rem; max-width:48rem; }
+  h2 { font-size:1.3rem; margin:3rem 0 .3rem; }
+  .kid { color:var(--yellow); font-size:.9rem; margin:.2rem 0 1rem; }
+  .kid::before { content:"🧒 "; }
+  p { max-width:52rem; }
+
+  .tablewrap { overflow-x:auto; border:1px solid var(--line); border-radius:14px; margin-top:1rem; }
+  table { width:100%; border-collapse:collapse; font-size:.85rem; min-width:820px; }
+  th, td { text-align:left; padding:.7rem .85rem; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; font-size:.72rem; text-transform:uppercase; letter-spacing:.05em;
+       background:var(--panel2); position:sticky; top:0; }
+  tr:last-child td { border-bottom:none; }
+  td b { color:var(--text); }
+  td .who { font-weight:700; }
+  code { font-size:.82rem; color:var(--text); background:var(--panel); padding:.05rem .3rem; border-radius:5px; }
+
+  .pill { display:inline-block; font-size:.68rem; font-weight:700; letter-spacing:.04em;
+          border:1px solid var(--line); border-radius:999px; padding:.08rem .5rem; white-space:nowrap; }
+  .pill.robot{color:var(--blue);border-color:var(--blue)}
+  .pill.human{color:var(--purple);border-color:var(--purple)}
+  .pill.det{color:var(--green);border-color:var(--green)}
+
+  .doctrine { display:grid; grid-template-columns:1fr 1fr; gap:.9rem; margin-top:1rem; }
+  .dbox { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:1.2rem 1.3rem; }
+  .dbox.gate { border-color:var(--green); }
+  .dbox.judge { border-color:var(--blue); }
+  .dbox h3 { font-size:1.05rem; margin-bottom:.4rem; }
+  .dbox p { color:var(--muted); font-size:.9rem; }
+
+  .decision { background:linear-gradient(180deg,#1d1728,#161320); border:1px solid var(--purple);
+              border-radius:16px; padding:1.5rem 1.5rem; margin-top:1rem; }
+  .decision h3 { font-size:1.1rem; margin-bottom:.5rem; color:var(--text); }
+  .decision p { color:var(--text); font-size:.95rem; }
+  .decision .lock { font-size:1.5rem; }
+
+  .note { background:var(--panel); border-left:3px solid var(--yellow); border-radius:8px;
+          padding:.9rem 1.1rem; font-size:.9rem; margin-top:1.2rem; color:var(--text); max-width:none; }
+  footer { max-width:1080px; margin:3rem auto 0; padding:1.5rem 1rem 0; border-top:1px solid var(--line);
+           color:var(--muted); font-size:.82rem; }
+  @media (max-width:700px){ .doctrine{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<nav><div class="in">
+  <span class="brand">Scraper<span class="dot">.</span>Factory</span>
+  <a href="index.html">Story</a>
+  <a href="architecture.html">Architecture</a>
+  <a href="workforce.html" class="active">Workforce</a>
+  <a href="platform.html">Platform</a>
+</div></nav>
+
+<main>
+  <h1>The agent workforce</h1>
+  <p class="lede">The factory is staffed by a mix of robots (agents and code) and humans, each with a
+  narrow job. The trick isn't handing everything to an LLM &mdash; it's deciding, role by role, where
+  judgment belongs and where a machine you can trust deterministically has to stand guard.</p>
+  <p class="kid">It's a workshop of little workers &mdash; some are robots, some are people &mdash; and each one has exactly one job.</p>
+
+  <h2>The roster</h2>
+  <div class="tablewrap">
+  <table>
+    <tr>
+      <th>Worker</th><th>Runtime</th><th>Trigger</th><th>Reads / writes</th><th>Human gate?</th>
+    </tr>
+    <tr>
+      <td><span class="who">Intake Clerk</span><br><span class="pill human">Port action</span></td>
+      <td>Port self-service action</td>
+      <td>Operator submits a form</td>
+      <td><b>Writes</b> a <code>requirement</code>; posts to <code>/feature</code></td>
+      <td>Operator files it</td>
+    </tr>
+    <tr>
+      <td><span class="who">Planner + Builder</span><br><span class="pill robot">agent</span></td>
+      <td>Local Claude Code (headless)</td>
+      <td><code>POST /feature</code></td>
+      <td><b>Reads/edits</b> files in a scratch clone (file tools only)<br><b>Forbidden:</b> <code>fixtures/</code>, <code>verifier.py</code>, drift thresholds</td>
+      <td>&mdash;</td>
+    </tr>
+    <tr>
+      <td><span class="who">Test Gate</span><br><span class="pill det">deterministic</span></td>
+      <td>GitHub Actions <code>ci.yml</code></td>
+      <td>PR opened to <code>main</code></td>
+      <td><b>Reads</b> the diff: pytest + <code>tsc --noEmit</code> + <code>next build</code></td>
+      <td>&mdash; (never an LLM)</td>
+    </tr>
+    <tr>
+      <td><span class="who">Reviewer / Merger</span><br><span class="pill human">human</span></td>
+      <td>Person on GitHub</td>
+      <td>Green CI</td>
+      <td><b>Reads</b> the PR, presses merge</td>
+      <td><b>Yes — the gate</b></td>
+    </tr>
+    <tr>
+      <td><span class="who">Deployer</span><br><span class="pill det">deterministic</span></td>
+      <td>GitHub Actions <code>deploy.yml</code></td>
+      <td>PR merged to <code>main</code></td>
+      <td><b>Writes</b> to Vercel; upserts <code>factory_deployment</code>; flips <code>requirement</code> → deployed</td>
+      <td>&mdash;</td>
+    </tr>
+    <tr>
+      <td><span class="who">Runner</span><br><span class="pill det">code</span></td>
+      <td>FastAPI <code>/run</code>, <code>/catalog</code>, <code>/publish</code> (dev: <code>make run</code>)</td>
+      <td>Port workflow (cron 08:00 UTC + event) or a button</td>
+      <td><b>Reads</b> guide + catalog; <b>writes</b> SQLite + ranked_title + scrape_run (incl. <code>error_detail</code>)</td>
+      <td>&mdash;</td>
+    </tr>
+    <tr>
+      <td><span class="who">Healer</span><br><span class="pill robot">code + agent</span></td>
+      <td>Bright Data <code>scraper heal</code></td>
+      <td>Drift on <code>/heal</code></td>
+      <td><b>Reads</b> the drift symptom; proposes a fix + preview</td>
+      <td>&mdash;</td>
+    </tr>
+    <tr>
+      <td><span class="who">Verifier</span><br><span class="pill det">deterministic</span></td>
+      <td><code>agents/verifier.py</code></td>
+      <td>After a heal preview</td>
+      <td><b>Reads</b> preview + frozen fixture; the only worker allowed to promote</td>
+      <td>Only on a failed diff</td>
+    </tr>
+    <tr>
+      <td><span class="who">Triage</span><br><span class="pill robot">Port AI agent</span></td>
+      <td>Port AI agent · Approval Required</td>
+      <td>Scraper health = drifting</td>
+      <td><b>Reads</b> run + heal history; recommends heal vs escalate; authors the drift description</td>
+      <td>Approval required</td>
+    </tr>
+    <tr>
+      <td><span class="who">Heal Explainer</span><br><span class="pill robot">Port AI agent</span></td>
+      <td>Port AI agent · Automatic</td>
+      <td>A heal event</td>
+      <td><b>Reads only</b>; narrates what drifted and why the Verifier approved/rejected</td>
+      <td>&mdash; (read-only)</td>
+    </tr>
+    <tr>
+      <td><span class="who">On-Call Assistant</span><br><span class="pill robot">Port AI agent</span></td>
+      <td>Port AI agent · Approval Required</td>
+      <td>Operator question</td>
+      <td><b>Reads</b> factory health; can file a <code>submit_feature_request</code></td>
+      <td>Approval required</td>
+    </tr>
+    <tr>
+      <td><span class="who">Catalog Coverage</span><br><span class="pill robot">Port AI agent</span></td>
+      <td>Port AI agent · Automatic</td>
+      <td>After a publish</td>
+      <td><b>Reads only</b>; reports record-link coverage of the ranked titles</td>
+      <td>&mdash; (read-only)</td>
+    </tr>
+    <tr>
+      <td><span class="who">Fixture Warden</span><br><span class="pill human">human</span></td>
+      <td>Person</td>
+      <td>New source / capture</td>
+      <td><b>Writes</b> the frozen <code>expected.json</code> answer sheet</td>
+      <td><b>Yes — the freeze</b></td>
+    </tr>
+  </table>
+  </div>
+  <p class="note">Four of the Port AI agents above (Triage, Heal Explainer, On-Call Assistant, Catalog
+  Coverage) are the factory's own; the Port workspace also carries stock demo agents from the Port
+  quickstart. Only the four listed here are wired into this system.</p>
+
+  <h2>The doctrine: judgment to agents, proof stays deterministic</h2>
+  <p class="kid">A clever robot can guess the fix, but a plain checklist &mdash; not a robot &mdash; decides if it's really fixed.</p>
+  <div class="doctrine">
+    <div class="dbox judge">
+      <h3>🧠 Judgment → agents</h3>
+      <p>Deciding <em>what broke</em>, whether a repair is worth attempting, how to phrase the symptom,
+      what feature to build &mdash; these are fuzzy, context-heavy calls. That's exactly where LLM agents
+      earn their keep: Triage reasons over history, the Builder writes code, the Healer re-prompts the scraper.</p>
+    </div>
+    <div class="dbox gate">
+      <h3>✅ Proof → deterministic code</h3>
+      <p>Deciding whether a fix is <em>real</em> is not fuzzy. The Verifier diffs against a frozen fixture;
+      CI runs pytest, tsc, and next build. No LLM is allowed at a promotion gate, because a gate you can't
+      trust deterministically isn't a gate. <b>The fixture is the only promotion gate in the heal loop.</b></p>
+    </div>
+  </div>
+
+  <h2>Why the Builder runs locally</h2>
+  <div class="decision">
+    <span class="lock">🔒</span>
+    <h3>No Anthropic credentials leave the operator's machine.</h3>
+    <p>The Planner + Builder is headless Claude Code running <b>locally</b>, behind the FastAPI
+    <code>/feature</code> endpoint &mdash; not in a cloud runner. It edits a scratch clone with file tools
+    only; deterministic code (in <code>agents/builder.py</code>) handles branch, commit, push, and PR, which
+    also guarantees the PR-body contract (<code>Requirement: req_&lt;id&gt;</code>) that the deploy workflow
+    parses on merge. GitHub Actions only ever runs no-AI steps: the CI gate and the Vercel deploy. This was a
+    deliberate operator decision &mdash; the model's API key stays on the laptop, and the cloud sees only code
+    and test results.</p>
+  </div>
+  <p class="note" style="border-left-color:var(--muted)">A cloud-runner variant of the builder was
+  built and then <b>deliberately removed</b> &mdash; running it would have shipped an Anthropic API key
+  to GitHub Actions. The local builder is the only builder; the only workflows left in
+  <code>.github/workflows/</code> are <code>ci.yml</code> and <code>deploy.yml</code>, both no-AI.</p>
+
+  <footer>
+    The workforce maps onto the diagrams on the <a href="architecture.html">architecture page</a> &mdash;
+    the heal loop (diagram 3) and the requirement→deploy slice (diagram 4). Every agent's reads and writes
+    land on Port blueprints described on the <a href="platform.html">platform page</a>.
+  </footer>
+</main>
+</body>
+</html>

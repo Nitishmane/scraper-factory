@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from factory import detect, pipeline, state
+from factory import brightdata, detect, pipeline, port, state
 from factory.agents import verifier
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "channel.expected.json"
@@ -120,6 +120,88 @@ def test_detect_state_key_is_per_provider(isolated_state):
     drift = detect.detect("sling", "c_shared", _good_rows(20, channel="ESPN"), pages=1)
     assert "lineup_change" not in drift.rules
     assert "schema_hash_changed" not in drift.rules
+
+
+# --- pipeline.run_once failure path ------------------------------------------------
+
+
+def test_run_once_reraises_and_records_error(isolated_state, monkeypatch):
+    """A fetch that raises must re-raise AND leave an error scrape_run in Port.
+
+    Everything that would touch the network is monkeypatched: the collector id, the lineup
+    (so no guide page is fetched), the per-page scrape (raises), and both Port writes (which
+    are captured, never sent). The assertion is that run_once propagates the exception and
+    that a captured upsert carries status="error" with a non-empty error_detail.
+    """
+    monkeypatch.setattr(pipeline, "collector_id", lambda: "c_test")
+    monkeypatch.setattr(
+        pipeline, "lineup", lambda provider: [{"channel": "AETV", "url": "https://x/Channel/AETV"}]
+    )
+
+    def _boom(cid, url):
+        raise brightdata.BrightDataError("collector exploded")
+
+    monkeypatch.setattr(pipeline, "_scrape_page", _boom)
+
+    upserts: list[dict] = []
+    monkeypatch.setattr(
+        port,
+        "upsert_entity",
+        lambda blueprint, identifier, title, properties, relations=None: upserts.append(
+            {"blueprint": blueprint, "identifier": identifier, "properties": properties}
+        ),
+    )
+    health_calls: list[tuple] = []
+    monkeypatch.setattr(
+        port,
+        "set_scraper_health",
+        lambda scraper_id, health, **extra: health_calls.append((scraper_id, health)),
+    )
+
+    with pytest.raises(brightdata.BrightDataError):
+        pipeline.run_once("philo", days=1)
+
+    run_writes = [u for u in upserts if u["blueprint"] == "scrape_run"]
+    assert run_writes, "run_once must record a scrape_run on failure"
+    props = run_writes[-1]["properties"]
+    assert props["status"] == "error"
+    assert props.get("error_detail")
+    assert "BrightDataError" in props["error_detail"]
+    # A failed run never flips health to healthy (that would clear a real problem).
+    assert ("c_test", "healthy") not in health_calls
+
+
+def test_run_once_clean_success_sets_healthy(isolated_state, monkeypatch):
+    """A clean run persists rows AND self-clears health to 'healthy'."""
+    monkeypatch.setattr(pipeline, "collector_id", lambda: "c_test")
+    monkeypatch.setattr(
+        pipeline, "lineup", lambda provider: [{"channel": "AETV", "url": "https://x/Channel/AETV"}]
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "_scrape_page",
+        lambda cid, url: (
+            [
+                {"title": f"Program {i}", "date_raw": "Sat, Aug 22", "start_raw": "8:00 PM"}
+                for i in range(20)
+            ],
+            "relay",
+            False,
+        ),
+    )
+    monkeypatch.setattr(
+        port, "upsert_entity", lambda *a, **k: None
+    )
+    health_calls: list[tuple] = []
+    monkeypatch.setattr(
+        port,
+        "set_scraper_health",
+        lambda scraper_id, health, **extra: health_calls.append((scraper_id, health)),
+    )
+
+    result = pipeline.run_once("philo", days=7)
+    assert not result["drift"], result["drift_description"]
+    assert ("c_test", "healthy") in health_calls
 
 
 # --- pipeline._parse_card_times ----------------------------------------------------

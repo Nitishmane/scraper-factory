@@ -13,10 +13,23 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+import httpx  # noqa: E402
+
 from factory import port, telemetry  # noqa: E402
 
 HEAL_WEBHOOK = os.getenv("HEAL_WEBHOOK_URL", "http://localhost:8000/heal")
 BUILD_WEBHOOK = os.getenv("BUILD_WEBHOOK_URL", "http://localhost:8000/build")
+# The Claude builder runs locally behind the FastAPI service (no Anthropic creds in GitHub
+# Actions), so the feature-request action posts to /feature. Point FEATURE_WEBHOOK_URL at a
+# public tunnel in .env, exactly like HEAL_WEBHOOK_URL / BUILD_WEBHOOK_URL.
+FEATURE_WEBHOOK = os.getenv("FEATURE_WEBHOOK_URL", "http://localhost:8000/feature")
+
+# Endpoints driven by Port Workflows + self-service actions (Phase 3). A teammate is building
+# /run, /catalog, /publish on the FastAPI service; these may 404 briefly until it is up. Point
+# them at a public tunnel in .env exactly like the webhooks above.
+RUN_WEBHOOK = os.getenv("RUN_WEBHOOK_URL", "http://localhost:8000/run")
+CATALOG_WEBHOOK = os.getenv("CATALOG_WEBHOOK_URL", "http://localhost:8000/catalog")
+PUBLISH_WEBHOOK = os.getenv("PUBLISH_WEBHOOK_URL", "http://localhost:8000/publish")
 
 DATA_SOURCE = {
     "identifier": "data_source",
@@ -81,6 +94,7 @@ SCRAPE_RUN = {
             "windows_scraped": {"type": "number", "title": "Guide windows"},
             "schema_hash": {"type": "string", "title": "Schema hash"},
             "drift_detected": {"type": "boolean", "title": "Drift detected"},
+            "error_detail": {"type": "string", "title": "Error detail"},
             # format url makes this render as a clickable deep link into SigNoz
             "trace_url": {"type": "string", "title": "Trace", "format": "url"},
         }
@@ -132,6 +146,64 @@ HEAL_EVENT = {
     "relations": {"scraper": {"target": "scraper", "required": False, "many": False}},
 }
 
+# The Claude-builder workforce: an operator's feature request becomes a Requirement, the
+# GitHub workflow builds it on a branch and opens a PR, and a Deployment records the result.
+REQUIREMENT = {
+    "identifier": "requirement",
+    "title": "Requirement",
+    "schema": {
+        "properties": {
+            "description": {"type": "string", "title": "Description", "format": "markdown"},
+            "kind": {
+                "type": "string",
+                "title": "Kind",
+                "enum": ["provider_add", "webapp_change", "other"],
+            },
+            "status": {
+                "type": "string",
+                "title": "Status",
+                "enum": ["requested", "building", "in_review", "deployed", "failed"],
+                "enumColors": {
+                    "requested": "lightGray",
+                    "building": "blue",
+                    "in_review": "yellow",
+                    "deployed": "green",
+                    "failed": "red",
+                },
+            },
+            "branch": {"type": "string", "title": "Branch"},
+            "pr_url": {"type": "string", "title": "PR", "format": "url"},
+        },
+        "required": ["status"],
+    },
+    "relations": {},
+}
+
+# A stock "deployment" blueprint already exists in this org (Port quickstart) with a
+# different schema, so ours is registered as `factory_deployment` to avoid clobbering it.
+DEPLOYMENT = {
+    "identifier": "factory_deployment",
+    "title": "Deployment",
+    "icon": "Rocket",
+    "schema": {
+        "properties": {
+            "environment": {"type": "string", "title": "Environment"},
+            "url": {"type": "string", "title": "URL", "format": "url"},
+            "commit_sha": {"type": "string", "title": "Commit SHA"},
+            "status": {
+                "type": "string",
+                "title": "Status",
+                "enum": ["success", "failure"],
+                "enumColors": {"success": "green", "failure": "red"},
+            },
+            "deployed_at": {"type": "string", "title": "Deployed at", "format": "date-time"},
+        }
+    },
+    "relations": {
+        "requirement": {"target": "requirement", "required": False, "many": False}
+    },
+}
+
 # ENTITY_UPDATED on scraper, gated by a JQ condition on the post-update state.
 # publish: true is REQUIRED or the automation sits inert.
 HEAL_AUTOMATION = {
@@ -171,6 +243,354 @@ BUILD_ACTION = {
     "invocationMethod": {"type": "WEBHOOK", "url": BUILD_WEBHOOK},
     "publish": True,
 }
+
+# Self-service front door for the Claude builder: creates a Requirement, then posts to the
+# FastAPI /feature endpoint. The builder runs locally behind that service (no Anthropic creds
+# in GitHub Actions), so this is a WEBHOOK invocation like request_data_source, not a GitHub
+# workflow dispatch. Port sends the run + entity payload; the endpoint reads inputs from it.
+FEATURE_REQUEST_ACTION = {
+    "identifier": "submit_feature_request",
+    "title": "Submit a feature request",
+    "description": "File a requirement; the Claude builder implements it on a branch and opens a PR",
+    "trigger": {
+        "type": "self-service",
+        "operation": "CREATE",
+        "blueprintIdentifier": "requirement",
+        "userInputs": {
+            "properties": {
+                "title": {"type": "string", "title": "Title"},
+                "details": {"type": "string", "title": "Details", "format": "markdown"},
+                "kind": {
+                    "type": "string",
+                    "title": "Kind",
+                    "enum": ["provider_add", "webapp_change", "other"],
+                    "default": "webapp_change",
+                },
+            },
+            "required": ["title", "details"],
+        },
+    },
+    "invocationMethod": {"type": "WEBHOOK", "url": FEATURE_WEBHOOK},
+    "publish": True,
+}
+
+# --- Port Workflows (Phase 3) -------------------------------------------------------------
+# Port Workflows is GA on this org. Shapes below were confirmed empirically against the live
+# POST/PUT /v1/workflows API (the public OpenAPI spec does not yet document it):
+#
+#   workflow  = {identifier, title, nodes:[...], connections:[...]}
+#   trigger node.config (schedule) = {type:"SCHEDULE_TRIGGER", cron:"m h dom mon dow"}
+#              (5-field cron, UTC, 5-min minimum interval; `published` defaults to true)
+#   trigger node.config (event)    = {type:"EVENT_TRIGGER",
+#                                     event:{type:"ENTITY_CREATED"|"ENTITY_UPDATED",
+#                                            blueprintIdentifier:"..."},
+#                                     condition:{type:"JQ", expressions:[...],
+#                                                combinator:"and"|"or"}}   # condition optional
+#   webhook  node.config           = {type:"WEBHOOK", method:"POST", url, body:{...}}
+#   agent    node.config           = {type:"AI_AGENT", agentIdentifier, userPrompt}
+#   connections                    = [{sourceIdentifier, targetIdentifier}, ...]
+#
+# JQ conditions and webhook/prompt bodies reference the trigger entity the same way the
+# existing automations do -- .diff.after.properties.<x> -- addressed as .trigger.event.diff.*
+# inside a workflow. The API stores these template strings verbatim; Port resolves them at run.
+
+WF_SCHEDULED_SCRAPE = {
+    "identifier": "wf_scheduled_scrape",
+    "title": "Scheduled scrape (all providers)",
+    "nodes": [
+        {
+            "identifier": "trigger",
+            "title": "Daily at 08:00 UTC",
+            "config": {"type": "SCHEDULE_TRIGGER", "cron": "0 8 * * *", "published": True},
+        },
+        {
+            "identifier": "run_scrape",
+            "title": "Kick off a full scrape",
+            # No provider -> the endpoint scrapes all providers; days:1 keeps the scheduled
+            # run cheap (a full 12-day sweep is ~144 fetches; see CLAUDE.md scrape volume).
+            "config": {"type": "WEBHOOK", "method": "POST", "url": RUN_WEBHOOK,
+                       "body": {"days": 1}},
+        },
+    ],
+    "connections": [{"sourceIdentifier": "trigger", "targetIdentifier": "run_scrape"}],
+}
+
+WF_SCHEDULED_CATALOG = {
+    "identifier": "wf_scheduled_catalog",
+    "title": "Scheduled catalog refresh",
+    "nodes": [
+        {
+            "identifier": "trigger",
+            "title": "Daily at 07:30 UTC",
+            # 30 min before the scrape so title -> record-URL mapping is fresh when the guide
+            # rows land. The catalog legitimately changes daily (no fixture; MIN_ROWS gate).
+            "config": {"type": "SCHEDULE_TRIGGER", "cron": "30 7 * * *", "published": True},
+        },
+        {
+            "identifier": "refresh_catalog",
+            "title": "Refresh the Philo catalog",
+            "config": {"type": "WEBHOOK", "method": "POST", "url": CATALOG_WEBHOOK, "body": {}},
+        },
+    ],
+    "connections": [{"sourceIdentifier": "trigger", "targetIdentifier": "refresh_catalog"}],
+}
+
+# A successful scrape_run publishes the fresh top-20. ENTITY_UPDATED as well as ENTITY_CREATED
+# so a run row flipped to success post-hoc still publishes; the /publish endpoint is idempotent.
+WF_PUBLISH_ON_SUCCESS = {
+    "identifier": "wf_publish_on_success",
+    "title": "Publish top-20 on a successful run",
+    "nodes": [
+        {
+            "identifier": "trigger",
+            "title": "scrape_run succeeded",
+            "config": {
+                "type": "EVENT_TRIGGER",
+                "event": {"type": "ENTITY_CREATED", "blueprintIdentifier": "scrape_run"},
+                "condition": {
+                    "type": "JQ",
+                    "expressions": ['.diff.after.properties.status == "success"'],
+                    "combinator": "and",
+                },
+                "published": True,
+            },
+        },
+        {
+            "identifier": "publish",
+            "title": "Publish the ranked top-20",
+            "config": {"type": "WEBHOOK", "method": "POST", "url": PUBLISH_WEBHOOK, "body": {}},
+        },
+    ],
+    "connections": [{"sourceIdentifier": "trigger", "targetIdentifier": "publish"}],
+}
+
+# A bad run (error, or drift detected) triages then heals. The triage AI agent authors the
+# plain-language SYMPTOM description the healer sends to Bright Data (never a guessed fix, per
+# CLAUDE.md); the deterministic Verifier still owns promotion downstream of /heal.
+WF_HEAL_ON_BAD_RUN = {
+    "identifier": "wf_heal_on_bad_run",
+    "title": "Triage + heal on a bad run",
+    "nodes": [
+        {
+            "identifier": "trigger",
+            "title": "scrape_run failed or drifted",
+            "config": {
+                "type": "EVENT_TRIGGER",
+                "event": {"type": "ENTITY_CREATED", "blueprintIdentifier": "scrape_run"},
+                "condition": {
+                    "type": "JQ",
+                    "expressions": [
+                        '.diff.after.properties.status == "error"',
+                        ".diff.after.properties.drift_detected == true",
+                    ],
+                    "combinator": "or",
+                },
+                "published": True,
+            },
+        },
+        {
+            "identifier": "triage",
+            "title": "Triage: author a drift description",
+            "config": {
+                "type": "AI_AGENT",
+                "agentIdentifier": "triage",
+                "userPrompt": (
+                    "A scrape run just failed or drifted. Run: {{ .trigger.event.diff.after.title }}. "
+                    "status={{ .trigger.event.diff.after.properties.status }}, "
+                    "rows={{ .trigger.event.diff.after.properties.rows_returned }}, "
+                    "drift_detected={{ .trigger.event.diff.after.properties.drift_detected }}, "
+                    "error_detail={{ .trigger.event.diff.after.properties.error_detail }}. "
+                    "Read the scraper's recent scrape_run and heal_event history and author a "
+                    "plain-language description of the observed SYMPTOM (what changed in the "
+                    "data), never a guess at the fix. Keep it under 400 characters."
+                ),
+            },
+        },
+        {
+            "identifier": "heal",
+            "title": "Invoke the healer",
+            "config": {
+                "type": "WEBHOOK",
+                "method": "POST",
+                "url": HEAL_WEBHOOK,
+                "body": {
+                    "provider": "{{ .trigger.event.diff.after.title }}",
+                    "collector_id": "{{ .trigger.event.diff.after.relations.scraper }}",
+                    "drift_description": "{{ .triage.output }}",
+                },
+            },
+        },
+    ],
+    "connections": [
+        {"sourceIdentifier": "trigger", "targetIdentifier": "triage"},
+        {"sourceIdentifier": "triage", "targetIdentifier": "heal"},
+    ],
+}
+
+# Fallback bodies for the two event-driven workflows if the /v1/workflows API rejects the
+# AI_AGENT node or a workflow shape after honest iteration: express them as plain automations
+# (the proven pattern in this file). The healer then gets a static description instead of an
+# agent-authored one -- still a valid symptom string, just less specific.
+PUBLISH_AUTOMATION_FALLBACK = {
+    "identifier": "publish_on_success",
+    "title": "Publish top-20 on a successful run",
+    "description": "Publishes the ranked top-20 when a scrape_run turns success",
+    "trigger": {
+        "type": "automation",
+        "event": {"type": "ENTITY_CREATED", "blueprintIdentifier": "scrape_run"},
+        "condition": {
+            "type": "JQ",
+            "expressions": ['.diff.after.properties.status == "success"'],
+            "combinator": "and",
+        },
+    },
+    "invocationMethod": {"type": "WEBHOOK", "url": PUBLISH_WEBHOOK},
+    "publish": True,
+}
+
+HEAL_ON_BAD_RUN_AUTOMATION_FALLBACK = {
+    "identifier": "heal_on_bad_run",
+    "title": "Heal on a bad run",
+    "description": "Invokes the healer when a scrape_run errors or reports drift",
+    "trigger": {
+        "type": "automation",
+        "event": {"type": "ENTITY_CREATED", "blueprintIdentifier": "scrape_run"},
+        "condition": {
+            "type": "JQ",
+            "expressions": [
+                '.diff.after.properties.status == "error"',
+                ".diff.after.properties.drift_detected == true",
+            ],
+            "combinator": "or",
+        },
+    },
+    "invocationMethod": {"type": "WEBHOOK", "url": HEAL_WEBHOOK},
+    "publish": True,
+}
+
+SCHEDULED_WORKFLOWS = (WF_SCHEDULED_SCRAPE, WF_SCHEDULED_CATALOG)
+EVENT_WORKFLOWS = (WF_PUBLISH_ON_SUCCESS, WF_HEAL_ON_BAD_RUN)
+
+# --- Self-service actions (Phase 3) -------------------------------------------------------
+# BUILD_ACTION / WEBHOOK pattern, but with no CREATE blueprint operation -- these are pure
+# "run this now" buttons that post straight to the pipeline endpoints. operation DAY-2 with no
+# blueprint is how Port models a global self-service button.
+RUN_SCRAPE_NOW_ACTION = {
+    "identifier": "run_scrape_now",
+    "title": "Run a scrape now",
+    "description": "Kick off a scrape immediately for one provider or all",
+    "trigger": {
+        "type": "self-service",
+        "operation": "DAY-2",
+        "userInputs": {
+            "properties": {
+                "provider": {
+                    "type": "string",
+                    "title": "Provider",
+                    "enum": ["philo", "youtubetv", "sling", "all"],
+                    "default": "all",
+                },
+                "days": {"type": "number", "title": "Days", "default": 1},
+            },
+            "required": [],
+        },
+    },
+    "invocationMethod": {
+        "type": "WEBHOOK",
+        "url": RUN_WEBHOOK,
+        "body": {
+            "provider": "{{ .inputs.provider }}",
+            "days": "{{ .inputs.days }}",
+        },
+    },
+    "publish": True,
+}
+
+REFRESH_CATALOG_NOW_ACTION = {
+    "identifier": "refresh_catalog_now",
+    "title": "Refresh the catalog now",
+    "description": "Refresh the Philo title -> record-URL catalog immediately",
+    "trigger": {
+        "type": "self-service",
+        "operation": "DAY-2",
+        "userInputs": {"properties": {}, "required": []},
+    },
+    "invocationMethod": {"type": "WEBHOOK", "url": CATALOG_WEBHOOK},
+    "publish": True,
+}
+
+PUBLISH_NOW_ACTION = {
+    "identifier": "publish_now",
+    "title": "Publish top-20 now",
+    "description": "Recompute and publish the ranked top-20 immediately",
+    "trigger": {
+        "type": "self-service",
+        "operation": "DAY-2",
+        "userInputs": {"properties": {}, "required": []},
+    },
+    "invocationMethod": {"type": "WEBHOOK", "url": PUBLISH_WEBHOOK},
+    "publish": True,
+}
+
+SELF_SERVICE_ACTIONS = (RUN_SCRAPE_NOW_ACTION, REFRESH_CATALOG_NOW_ACTION, PUBLISH_NOW_ACTION)
+
+
+def _upsert_workflow(defn: dict) -> None:
+    """Idempotent workflow create-or-update against POST/PUT /v1/workflows.
+
+    Raises RuntimeError on a non-2xx so main() can fall back to a plain automation. Kept in
+    this script (not factory.port) so teammates editing port.py nearby are undisturbed.
+    """
+    ident = defn["identifier"]
+    resp = httpx.post(
+        f"{port.API}/workflows", json=defn, headers=port._headers(), timeout=30
+    )
+    # An existing identifier 409s ("Unique constraint failed on the orgId,identifier field");
+    # a shape re-validation can 422. Either way PUT updates it in place. Mirrors
+    # port.create_blueprint / create_automation, which branch on the status code alone.
+    if resp.status_code in (409, 422):
+        resp = httpx.put(
+            f"{port.API}/workflows/{ident}", json=defn, headers=port._headers(), timeout=30
+        )
+    if resp.status_code >= 300:
+        raise RuntimeError(f"workflow {ident}: {resp.status_code} {resp.text}")
+    print(f"workflow ready: {ident}")
+
+
+def _provision_workflows() -> None:
+    """Create the four workflows; on honest failure of an event workflow, fall back to an
+    automation. Scheduled workflows have no automation equivalent -- if they fail, print the
+    exact UI config an operator must enter instead."""
+    for wf in SCHEDULED_WORKFLOWS:
+        try:
+            _upsert_workflow(wf)
+        except Exception as exc:
+            cron = wf["nodes"][0]["config"]["cron"]
+            url = wf["nodes"][1]["config"]["url"]
+            body = wf["nodes"][1]["config"].get("body", {})
+            print(f"!! could not create scheduled workflow {wf['identifier']}: {exc}")
+            print("   NO automation equivalent for a schedule -- create in the Port UI:")
+            print(f"     Workflows -> New -> Trigger: Schedule, cron '{cron}' (UTC)")
+            print(f"     -> Webhook node: POST {url}  body {body}")
+
+    for wf in EVENT_WORKFLOWS:
+        try:
+            _upsert_workflow(wf)
+        except Exception as exc:
+            print(f"!! could not create event workflow {wf['identifier']}: {exc}")
+            fallback = (
+                PUBLISH_AUTOMATION_FALLBACK
+                if wf is WF_PUBLISH_ON_SUCCESS
+                else HEAL_ON_BAD_RUN_AUTOMATION_FALLBACK
+            )
+            print(f"   falling back to automation {fallback['identifier']} "
+                  "(no AI-agent triage; healer gets no drift description)")
+            try:
+                port.create_automation(fallback)
+                print(f"automation (fallback) ready: {fallback['identifier']}")
+            except Exception as exc2:
+                print(f"!! fallback automation {fallback['identifier']} also failed: {exc2}")
+
 
 # Governance gate on the scraper fleet. Levels ascend Basic -> Bronze -> Silver -> Gold.
 # The lowest level ("Basic") is the fallback for entities matching no rule and carries no
@@ -346,19 +766,139 @@ TRIAGE_AGENT = {
     },
 }
 
+# Read-only narrator of the heal loop. Automatic (no approval): it only reads and explains.
+# `tools` is a regex allowlist; the live _ai_agent schema stores it as an array of patterns.
+HEAL_EXPLAINER_AGENT = {
+    "identifier": "heal_explainer",
+    "title": "Heal Explainer",
+    "properties": {
+        "description": "Narrates heal events: what drifted, what the healer tried, why the "
+                       "deterministic Verifier approved or rejected.",
+        "status": "active",
+        "execution_mode": "Automatic",
+        "tools": ["^(list|get|search|describe)_.*"],
+        "prompt": "You are the Heal Explainer for a self-healing scraper factory. Given a "
+                  "scraper or heal_event, read heal_event, scrape_run and scraper entities "
+                  "and narrate: what drifted, what the healer tried, and why the "
+                  "deterministic Verifier approved or rejected it. Quote drift_description "
+                  "and outcome verbatim. You only read and explain; you never trigger heals "
+                  "or approve anything.",
+        "conversation_starters": [
+            "Explain the latest heal event",
+            "Why was the last heal rolled back?",
+            "Which scrapers healed this week?",
+        ],
+    },
+}
+
+# Operator Q&A. Approval Required because it can trigger submit_feature_request.
+ONCALL_ASSISTANT_AGENT = {
+    "identifier": "oncall_assistant",
+    "title": "On-Call Assistant",
+    "properties": {
+        "description": "Operator Q&A over factory health; can file a feature request to "
+                       "kick off the Claude builder (with approval).",
+        "status": "active",
+        "execution_mode": "Approval Required",
+        "tools": ["^(list|get|search|describe)_.*|^run_submit_feature_request$"],
+        "prompt": "You are the On-Call Assistant for the scraper factory. Answer operator "
+                  "questions from scraper, scrape_run, heal_event, requirement and "
+                  "deployment entities: current health, last good run, open drift, recent "
+                  "deploys. If heal history shows repeated rolled_back outcomes, recommend "
+                  "escalation and, if asked, trigger submit_feature_request to file a fix. "
+                  "Never mark anything healthy yourself; the Verifier owns promotion.",
+        "conversation_starters": [
+            "What is broken right now?",
+            "Summarize factory health",
+            "File a fix request for the broken scraper",
+        ],
+    },
+}
+
+# Read-only coverage analyst over the ranked top titles.
+CATALOG_COVERAGE_AGENT = {
+    "identifier": "catalog_coverage",
+    "title": "Catalog Coverage",
+    "properties": {
+        "description": "Reports record-link coverage of the ranked top titles and where "
+                       "catalog gaps hurt most.",
+        "status": "active",
+        "execution_mode": "Automatic",
+        "tools": ["^(list|get|search|describe)_.*"],
+        "prompt": "You are the Catalog Coverage analyst for the scraper factory. Read "
+                  "ranked_title entities and report coverage: how many top titles have a "
+                  "philo.com record_url versus guide-link fallbacks, which channels and "
+                  "providers dominate, and how coverage moved since the last publish. "
+                  "Suggest which catalog gaps matter most. You only read and report; you "
+                  "never modify entities or trigger actions.",
+        "conversation_starters": [
+            "What is record-link coverage today?",
+            "Which top titles lack record links?",
+            "Which provider dominates the top 20?",
+        ],
+    },
+}
+
+NEW_AGENTS = (HEAL_EXPLAINER_AGENT, ONCALL_ASSISTANT_AGENT, CATALOG_COVERAGE_AGENT)
+
+# The two deployable services, on the org's existing (empty) `service` blueprint. That
+# blueprint carries only `criticality` and a github_repository relation -- no url property --
+# so the webapp URL lives on its factory_deployment entities, not here. The github_repository
+# relation is skipped unless a matching repo entity was ingested (the GitHub app is not on
+# this repo, so it usually is not).
+SERVICE_ENTITIES = (
+    {"identifier": "scraper_factory", "title": "scraper-factory",
+     "properties": {"criticality": "high"}, "repo": "scraper-factory"},
+    {"identifier": "top20_webapp", "title": "top20-webapp",
+     "properties": {"criticality": "medium"}, "repo": "scraper-factory-top20"},
+)
+
+
+def _seed_services() -> None:
+    """Upsert the two service entities, relating to a github repo only if one exists."""
+    for svc in SERVICE_ENTITIES:
+        relations = {}
+        repo = svc.get("repo")
+        if repo:
+            resp = httpx.get(
+                f"{port.API}/blueprints/githubRepository/entities/{repo}",
+                headers=port._headers(),
+                timeout=30,
+            )
+            if resp.status_code < 300:
+                relations = {"github_repository": repo}
+            else:
+                print(f"   github repo entity '{repo}' not ingested; skipping relation")
+        port.upsert_entity(
+            "service", svc["identifier"], svc["title"], svc["properties"], relations,
+        )
+        print(f"service entity ready: {svc['identifier']}")
+
 
 def main() -> int:
     telemetry.init()
-    for blueprint in (DATA_SOURCE, SCRAPER, SCRAPE_RUN, HEAL_EVENT, RANKED_TITLE):
+    # REQUIREMENT must precede DEPLOYMENT: factory_deployment relates to it.
+    for blueprint in (
+        DATA_SOURCE, SCRAPER, SCRAPE_RUN, HEAL_EVENT, RANKED_TITLE,
+        REQUIREMENT, DEPLOYMENT,
+    ):
         port.create_blueprint(blueprint)
 
-    for definition in (HEAL_AUTOMATION, BUILD_ACTION):
+    for definition in (
+        HEAL_AUTOMATION, BUILD_ACTION, FEATURE_REQUEST_ACTION, *SELF_SERVICE_ACTIONS,
+    ):
         try:
             port.create_automation(definition)
         except Exception as exc:
             # Action/automation payload shapes evolve; blueprints are the hard dependency.
             print(f"!! could not create {definition['identifier']}: {exc}")
             print("   create it in the Port UI or via the MCP server, then re-run.")
+
+    # Port Workflows: two scheduled, two event-driven (with automation fallback).
+    try:
+        _provision_workflows()
+    except Exception as exc:
+        print(f"!! workflow provisioning failed: {exc}")
 
     # Governance + interface. Non-fatal: the blueprints and automation are the hard
     # dependency; a rejected scorecard/dashboard should not fail the whole bootstrap.
@@ -376,15 +916,20 @@ def main() -> int:
     except Exception as exc:
         print(f"!! could not seed scraper entities: {exc}")
 
+    for agent in (TRIAGE_AGENT, *NEW_AGENTS):
+        try:
+            port.upsert_entity(
+                "_ai_agent", agent["identifier"], agent["title"], agent["properties"],
+            )
+            print(f"AI agent ready: {agent['identifier']}")
+        except Exception as exc:
+            print(f"!! could not create the {agent['identifier']} agent: {exc}")
+            print("   register it via the Port UI (AI Builder), then re-run.")
+
     try:
-        port.upsert_entity(
-            "_ai_agent", TRIAGE_AGENT["identifier"], TRIAGE_AGENT["title"],
-            TRIAGE_AGENT["properties"],
-        )
-        print("AI agent ready: triage")
+        _seed_services()
     except Exception as exc:
-        print(f"!! could not create the Triage agent: {exc}")
-        print("   register it via the Port UI (AI Builder), then re-run.")
+        print(f"!! could not seed service entities: {exc}")
 
     print("\nbootstrap complete.")
     print("Remaining, best done in the Port UI:")

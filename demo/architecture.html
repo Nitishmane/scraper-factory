@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scraper Factory — architecture</title>
+<style>
+  :root { color-scheme: dark;
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c222b; --line:#30363d; --text:#e6edf3; --muted:#8b949e;
+    --blue:#58a6ff; --green:#3fb950; --yellow:#d29922; --red:#f85149; --purple:#bc8cff; --pink:#ff7b9d; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--text);
+         font:15px/1.55 -apple-system,"Segoe UI",sans-serif; padding:0 0 5rem; }
+  main { max-width:1080px; margin:0 auto; padding:0 1rem; }
+  a { color:var(--blue); }
+
+  nav { position:sticky; top:0; z-index:10; background:rgba(13,17,23,.92);
+        border-bottom:1px solid var(--line); backdrop-filter:blur(6px); }
+  nav .in { max-width:1080px; margin:0 auto; display:flex; gap:.2rem; align-items:center;
+            padding:.6rem 1rem; flex-wrap:wrap; }
+  nav .brand { font-weight:800; margin-right:.8rem; letter-spacing:-.01em; }
+  nav .brand .dot { color:var(--green); }
+  nav a { color:var(--muted); text-decoration:none; font-size:.85rem; font-weight:600;
+          padding:.35rem .7rem; border-radius:8px; }
+  nav a:hover { color:var(--text); background:var(--panel); }
+  nav a.active { color:var(--text); background:var(--panel); }
+
+  h1 { font-size:1.9rem; margin:2.4rem 0 .4rem; letter-spacing:-.02em; }
+  .lede { color:var(--muted); font-size:1.05rem; max-width:46rem; }
+  h2 { font-size:1.35rem; margin:3rem 0 .3rem; }
+  .kid { color:var(--yellow); font-size:.9rem; margin:.2rem 0 1rem; }
+  .kid::before { content:"🧒 "; }
+
+  /* BIG diagram lanes */
+  .diagram { background:var(--panel); border:1px solid var(--line); border-radius:16px;
+             padding:1.6rem 1.4rem; overflow-x:auto; }
+  .lane { display:flex; align-items:center; gap:.6rem; margin:1rem 0; flex-wrap:nowrap; min-width:760px; }
+  .lane-label { width:120px; flex-shrink:0; color:var(--muted); font-size:.78rem; font-weight:700;
+                letter-spacing:.05em; text-transform:uppercase; }
+  .node { background:var(--bg); border:1px solid var(--line); border-radius:11px; padding:.7rem 1rem;
+          font-size:1rem; font-weight:600; white-space:nowrap; }
+  .node small { display:block; color:var(--muted); font-size:.72rem; font-weight:500; margin-top:.15rem; }
+  .node.hot { border-color:var(--blue); box-shadow:0 0 0 1px rgba(88,166,255,.25) inset; }
+  .node.gate { border-color:var(--green); box-shadow:0 0 0 2px rgba(63,185,80,.35) inset; background:#12251a; }
+  .node.alarm { border-color:var(--yellow); }
+  .node.human { border-color:var(--purple); background:#1d1728; }
+  .arrow { color:var(--muted); flex-shrink:0; font-size:1.3rem; }
+  .arrow.down { transform:rotate(90deg); }
+  .branch { color:var(--muted); font-size:.75rem; font-style:italic; flex-shrink:0; }
+
+  .caption { font-size:.95rem; color:var(--text); margin-top:1rem; max-width:52rem; }
+  .legend { display:flex; gap:1.1rem; flex-wrap:wrap; margin-top:1rem; font-size:.78rem; color:var(--muted); }
+  .legend span { display:inline-flex; align-items:center; gap:.35rem; }
+  .swatch { width:14px; height:14px; border-radius:4px; border:1px solid; display:inline-block; }
+  .sw-hot{border-color:var(--blue)} .sw-gate{border-color:var(--green);background:#12251a}
+  .sw-alarm{border-color:var(--yellow)} .sw-human{border-color:var(--purple);background:#1d1728}
+
+  footer { max-width:1080px; margin:3rem auto 0; padding:1.5rem 1rem 0; border-top:1px solid var(--line);
+           color:var(--muted); font-size:.82rem; }
+</style>
+</head>
+<body>
+<nav><div class="in">
+  <span class="brand">Scraper<span class="dot">.</span>Factory</span>
+  <a href="index.html">Story</a>
+  <a href="architecture.html" class="active">Architecture</a>
+  <a href="workforce.html">Workforce</a>
+  <a href="platform.html">Platform</a>
+</div></nav>
+
+<main>
+  <h1>How the factory is wired</h1>
+  <p class="lede">Four diagrams, built as HTML so they stay sharp on a projector. Each one has a
+  plain-English caption and a one-line version for a ten-year-old. Colors are consistent throughout:</p>
+  <div class="legend">
+    <span><span class="swatch sw-hot"></span> live / traced step</span>
+    <span><span class="swatch sw-gate"></span> the deterministic gate</span>
+    <span><span class="swatch sw-alarm"></span> alarm / drift signal</span>
+    <span><span class="swatch sw-human"></span> human decision</span>
+  </div>
+
+  <!-- 1. PIPELINE -->
+  <h2>1 · The data pipeline</h2>
+  <p class="kid">Robots read the TV guide, score every show, and put the winners on a poster.</p>
+  <div class="diagram">
+    <div class="lane"><div class="lane-label">Guide</div>
+      <div class="node hot">streamingtvguides.com<small>one page per channel · ~455 programs · ~12 days</small></div>
+      <span class="arrow">→</span>
+      <div class="node">lineup(provider)<small>parse anchors: Philo 137 · YT 175 · Sling 119</small></div>
+    </div>
+    <div class="lane"><div class="lane-label">Scrape</div>
+      <div class="node hot">collector run × N<small>one shared channel collector</small></div>
+      <span class="arrow">→</span>
+      <div class="node">parse times ET→UTC<small>deterministic, in pipeline</small></div>
+      <span class="arrow">→</span>
+      <div class="node">SQLite guide rows<small>out/factory.db</small></div>
+    </div>
+    <div class="lane"><div class="lane-label">Rank</div>
+      <div class="node">TMDB enrich<small>popularity + rating, cached</small></div>
+      <span class="arrow">→</span>
+      <div class="node">score &amp; split<small>0.6 pop · 0.25 rating · 0.1 airings + boosts</small></div>
+      <span class="arrow">→</span>
+      <div class="node hot">top 10 shows + 10 movies</div>
+    </div>
+    <div class="lane"><div class="lane-label">Publish</div>
+      <div class="node hot">Port Context Lake<small>ranked_title: show_01..10, movie_01..10</small></div>
+      <span class="arrow">→</span>
+      <div class="node hot">Next.js webapp<small>reads the lake server-side · Record on Philo</small></div>
+    </div>
+  </div>
+  <p class="caption">A run parses each provider's channel lineup, scrapes <code>GUIDE_MAX_CHANNELS</code>
+  channel pages through the shared collector, converts Eastern airtimes to UTC locally, and stores rows
+  in SQLite. The ranker joins guide rows with the Philo catalog and TMDB, scores every title, and keeps
+  the top 10 of each kind. <code>make publish</code> upserts those 20 entities into Port's Context Lake;
+  the webapp reads them at request time and links each card to its Philo record page.</p>
+
+  <!-- 2. RELAY SPLIT -->
+  <h2>2 · The fetch / extract relay split</h2>
+  <p class="kid">One robot grabs the live page; a different robot is only allowed to read a saved copy.</p>
+  <div class="diagram">
+    <div class="lane"><div class="lane-label">Fetch (live)</div>
+      <div class="node hot">Bright Data Web Unlocker<small>brightdata scrape</small></div>
+      <span class="arrow">→</span>
+      <div class="node">streamingtvguides.com<small>LIVE page, ~600 KB</small></div>
+      <span class="arrow">→</span>
+      <div class="node">fixtures/relay/&lt;page&gt;.html<small>archived input · 30-min cache</small></div>
+    </div>
+    <div class="lane"><div class="lane-label">Extract</div>
+      <div class="node">cloudflared tunnel<small>FIXTURE_BASE_URL</small></div>
+      <span class="arrow">→</span>
+      <div class="node hot">Scraper Studio collector<small>extracts from the tunneled copy</small></div>
+      <span class="arrow">→</span>
+      <div class="node">program rows<small>title · times · category</small></div>
+    </div>
+  </div>
+  <p class="caption">Bright Data policy blocks collector runs against streaming-media domains
+  (confirmed by their support, 2026-08-22, who endorsed this workaround). So scraping is a two-product
+  pipeline: the Web Unlocker fetches the live page and archives it under <code>fixtures/relay/</code>,
+  then the collector extracts from that tunneled copy. Two wins fall out for free &mdash; the code always
+  tries a direct collector run first (so if the policy ever lifts, the relay disappears by itself), and
+  every scrape's input HTML is archived, making drift investigations replayable byte-for-byte.</p>
+
+  <!-- 3. SELF-HEAL LOOP -->
+  <h2>3 · The self-heal loop</h2>
+  <p class="kid">When a robot breaks, another robot fixes it &mdash; but the inspector's checklist decides if the fix counts.</p>
+  <div class="diagram">
+    <div class="lane"><div class="lane-label">Detect (fast)</div>
+      <div class="node alarm">drift detector<small>7 deterministic rules</small></div>
+      <span class="arrow">→</span>
+      <div class="node alarm">Port: health = drifting<small>seconds</small></div>
+      <span class="arrow">→</span>
+      <div class="node hot">Port automation<small>JQ-gated webhook</small></div>
+      <span class="arrow">→</span>
+      <div class="node hot">POST /heal<small>FastAPI, traced</small></div>
+    </div>
+    <div class="lane"><div class="lane-label">Detect (net)</div>
+      <div class="node alarm">SigNoz alert<small>drift.detected &gt; 0 · or "data stopped"</small></div>
+      <span class="arrow">→</span>
+      <div class="node">grouped webhook<small>~5 min</small></div>
+      <span class="arrow">→</span>
+      <div class="node hot">POST /heal<small>same idempotent endpoint</small></div>
+    </div>
+    <div class="lane"><div class="lane-label">Repair</div>
+      <div class="node hot">brightdata scraper heal<small>semantic symptom prompt</small></div>
+      <span class="arrow">→</span>
+      <div class="node">preview_result<small>awaiting_approval</small></div>
+      <span class="arrow">→</span>
+      <div class="node gate">Verifier: diff vs frozen fixture<small>plain code — the only promoter</small></div>
+    </div>
+    <div class="lane"><div class="lane-label">Promote</div>
+      <div class="node">✅ pass</div>
+      <span class="arrow">→</span>
+      <div class="node">scraper approve<small>health = healthy</small></div>
+      <span class="branch">— or —</span>
+      <div class="node">❌ fail</div>
+      <span class="arrow">→</span>
+      <div class="node">approve --reject<small>health = broken</small></div>
+      <span class="arrow">→</span>
+      <div class="node human">human queue<small>in Port</small></div>
+    </div>
+  </div>
+  <p class="caption">Two independent triggers feed one idempotent <code>/heal</code> endpoint: the inline
+  detector (the reflex, seconds) and the SigNoz alert (the immune system, ~5 min, and the only thing that
+  catches a pipeline that died entirely). Heal sends a plain-language description of the <em>symptom</em>
+  to Bright Data, which proposes a fix and a preview. The <b>Verifier is ordinary deterministic code</b>:
+  it diffs that preview against a frozen fixture. Pass promotes; fail rejects, marks the scraper broken,
+  and escalates to a human. Nothing is ever promoted without a passing fixture diff.</p>
+
+  <!-- 4. WORKFORCE SLICE -->
+  <h2>4 · The software-factory slice: requirement → deploy</h2>
+  <p class="kid">You ask for a feature on a form; a coding-robot writes it, a test-robot checks it, and a person presses merge.</p>
+  <div class="diagram">
+    <div class="lane"><div class="lane-label">Intake</div>
+      <div class="node human">Operator files request<small>Port action: submit_feature_request</small></div>
+      <span class="arrow">→</span>
+      <div class="node hot">webhook → POST /feature<small>FastAPI · creates requirement (building)</small></div>
+    </div>
+    <div class="lane"><div class="lane-label">Build (local)</div>
+      <div class="node hot">local Claude Code<small>headless, edits a scratch clone</small></div>
+      <span class="arrow">→</span>
+      <div class="node">deterministic git<small>branch req/req_&lt;id&gt; · commit · push</small></div>
+      <span class="arrow">→</span>
+      <div class="node hot">open PR<small>body starts "Requirement: req_&lt;id&gt;"</small></div>
+    </div>
+    <div class="lane"><div class="lane-label">Gate</div>
+      <div class="node gate">GitHub Actions ci.yml<small>pytest + tsc + next build — never an LLM</small></div>
+      <span class="arrow">→</span>
+      <div class="node human">human reviews &amp; merges<small>the promotion gate</small></div>
+    </div>
+    <div class="lane"><div class="lane-label">Deploy</div>
+      <div class="node hot">deploy.yml → Vercel<small>vercel build + deploy --prebuilt</small></div>
+      <span class="arrow">→</span>
+      <div class="node">upsert factory_deployment<small>+ flip requirement → deployed</small></div>
+    </div>
+  </div>
+  <p class="caption">The same doctrine as the heal loop, applied to shipping features. An operator's
+  feature request becomes a <code>requirement</code> entity; a <b>locally-run</b> Claude Code edits a
+  scratch clone (file tools only; <code>fixtures/</code>, <code>verifier.py</code>, and the drift
+  thresholds are off-limits), and deterministic code opens the PR. GitHub Actions runs only no-AI checks,
+  a human merges, and the deploy workflow ships to Vercel and records a <code>factory_deployment</code>
+  back in Port. The builder runs locally on purpose: <b>no Anthropic credentials leave the operator's
+  machine</b>. The human merge and the deterministic CI stay the promotion gates.</p>
+
+  <footer>
+    Every "traced" node above emits an OpenTelemetry span to SigNoz &mdash; even Port's automation calling
+    <code>/heal</code> shows up as a span, because the service runs under <code>opentelemetry-instrument</code>.
+    See the <a href="platform.html">platform page</a> for the full signal list.
+  </footer>
+</main>
+</body>
+</html>
