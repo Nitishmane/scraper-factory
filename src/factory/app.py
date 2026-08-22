@@ -21,10 +21,12 @@ import hmac
 import html as html_lib
 import os
 import re
+from pathlib import Path
 from typing import Any
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import brightdata, catalog, pipeline, port, publish, rank, telemetry
@@ -437,3 +439,11 @@ def _extract(req: HealRequest) -> tuple[str | None, str | None, str | None]:
         )
 
     return None, None, None
+
+
+# The multipage demo site (demo/) doubles as the service's front door: GET / serves the
+# project story, /architecture.html the diagrams, etc. Mounted last so every API route
+# above wins; StaticFiles only sees paths nothing else claimed.
+_DEMO_DIR = Path(__file__).resolve().parents[2] / "demo"
+if _DEMO_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=str(_DEMO_DIR), html=True), name="demo")

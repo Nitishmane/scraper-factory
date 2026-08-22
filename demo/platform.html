@@ -137,12 +137,21 @@
     <tr><td><b>run_scrape_now / refresh_catalog_now / publish_now</b></td><td>operator presses a button</td><td>same endpoints, on demand</td></tr>
   </table>
   </div>
-  <p class="note">New endpoints <code>POST /run</code>, <code>/catalog</code>, <code>/publish</code>
+  <p class="note">Endpoints <code>POST /run</code>, <code>/catalog</code>, <code>/publish</code>
   each return <code>202</code> and run as background tasks, so a Port call never blocks on a scrape.
   And <b>failures are now visible in Port</b>: <code>scrape_run</code> entities record
   <code>status = "error"</code> plus an <code>error_detail</code> field carrying Bright Data's actual
   error text, so <code>wf_heal_on_bad_run</code> can react and the dashboard shows <em>why</em> a run
   failed &mdash; previously a failed run simply produced no rows and was invisible.</p>
+  <p class="note" style="border-left-color:var(--green)"><b>Webhook auth.</b> All six POST endpoints
+  (<code>/run /catalog /publish /heal /feature /build</code>) are gated by a shared secret
+  <code>FACTORY_WEBHOOK_TOKEN</code>, carried as <code>?token=</code> or an <code>x-factory-token</code>
+  header and compared in constant time; a bad or missing token returns <code>401</code>. The bootstrap
+  scripts bake the token into every provisioned Port + SigNoz webhook URL (SigNoz can't send headers, so
+  it rides in the query string). GET routes &mdash; the demo site at <code>/</code>, <code>/top20</code>,
+  <code>/api/top20</code>, <code>/healthz</code>, <code>/docs</code> &mdash; stay open. If <code>/heal</code>
+  gets a payload with unresolved fields, it resolves the newest bad <code>scrape_run</code> from the
+  Context Lake itself.</p>
 
   <h2>SigNoz — the telemetry</h2>
   <p class="lede" style="margin-bottom:1rem">Three correlated signals, on both the pipeline and the FastAPI

@@ -83,8 +83,10 @@
   <h2>1 · The data pipeline</h2>
   <p class="kid">Robots read the TV guide, score every show, and put the winners on a poster.</p>
   <div class="diagram">
-    <div class="lane"><div class="lane-label">Guide</div>
-      <div class="node hot">streamingtvguides.com<small>one page per channel · ~455 programs · ~12 days</small></div>
+    <div class="lane"><div class="lane-label">Trigger</div>
+      <div class="node hot">Port cron<small>wf_scheduled_scrape · 08:00 UTC → POST /run</small></div>
+      <span class="arrow">→</span>
+      <div class="node">streamingtvguides.com<small>one page per channel · ~455 programs · ~12 days</small></div>
       <span class="arrow">→</span>
       <div class="node">lineup(provider)<small>parse anchors: Philo 137 · YT 175 · Sling 119</small></div>
     </div>
@@ -103,16 +105,21 @@
       <div class="node hot">top 10 shows + 10 movies</div>
     </div>
     <div class="lane"><div class="lane-label">Publish</div>
+      <div class="node hot">wf_publish_on_success<small>Port event → POST /publish</small></div>
+      <span class="arrow">→</span>
       <div class="node hot">Port Context Lake<small>ranked_title: show_01..10, movie_01..10</small></div>
       <span class="arrow">→</span>
       <div class="node hot">Next.js webapp<small>reads the lake server-side · Record on Philo</small></div>
     </div>
   </div>
-  <p class="caption">A run parses each provider's channel lineup, scrapes <code>GUIDE_MAX_CHANNELS</code>
-  channel pages through the shared collector, converts Eastern airtimes to UTC locally, and stores rows
-  in SQLite. The ranker joins guide rows with the Philo catalog and TMDB, scores every title, and keeps
-  the top 10 of each kind. <code>make publish</code> upserts those 20 entities into Port's Context Lake;
-  the webapp reads them at request time and links each card to its Philo record page.</p>
+  <p class="caption">Port's <code>wf_scheduled_scrape</code> cron calls <code>/run</code>, which parses each
+  provider's channel lineup, scrapes <code>GUIDE_MAX_CHANNELS</code> channel pages through the shared
+  collector, converts Eastern airtimes to UTC locally, and stores rows in SQLite &mdash; recording a
+  <code>scrape_run</code> entity. On a clean run, Port's <code>wf_publish_on_success</code> event workflow
+  fires <code>/publish</code>: the ranker joins guide rows with the Philo catalog and TMDB, keeps the top
+  10 of each kind, and upserts those 20 entities into the Context Lake, where the webapp reads them at
+  request time. This whole loop is proven end-to-end from Port's cloud (650 rows, auto-published). The
+  <code>make</code> targets do the same steps for local development.</p>
 
   <!-- 2. RELAY SPLIT -->
   <h2>2 · The fetch / extract relay split</h2>
@@ -184,7 +191,11 @@
   catches a pipeline that died entirely). Heal sends a plain-language description of the <em>symptom</em>
   to Bright Data, which proposes a fix and a preview. The <b>Verifier is ordinary deterministic code</b>:
   it diffs that preview against a frozen fixture. Pass promotes; fail rejects, marks the scraper broken,
-  and escalates to a human. Nothing is ever promoted without a passing fixture diff.</p>
+  and escalates to a human. Nothing is ever promoted without a passing fixture diff. <b>Proven on the
+  unhappy path:</b> a fault-injected failure fired <code>wf_heal_on_bad_run</code>, the Triage agent
+  authored the description, a real Bright Data heal cycle ran, and the verifier <b>rejected</b> the repair
+  (2 rows vs the fixture's 30) and escalated &mdash; the next clean run self-cleared health to healthy. A
+  rejected bad repair is the system working correctly.</p>
 
   <!-- 4. WORKFORCE SLICE -->
   <h2>4 · The software-factory slice: requirement → deploy</h2>
@@ -224,7 +235,10 @@
   <footer>
     Every "traced" node above emits an OpenTelemetry span to SigNoz &mdash; even Port's automation calling
     <code>/heal</code> shows up as a span, because the service runs under <code>opentelemetry-instrument</code>.
-    See the <a href="platform.html">platform page</a> for the full signal list.
+    Every Port → factory arrow is a token-gated <code>POST</code> (shared secret <code>FACTORY_WEBHOOK_TOKEN</code>,
+    baked into the provisioned webhook URLs; a bare call gets <code>401</code>). This very page is served by
+    that same FastAPI service at <code>/</code>. See the <a href="platform.html">platform page</a> for the
+    full signal list.
   </footer>
 </main>
 </body>

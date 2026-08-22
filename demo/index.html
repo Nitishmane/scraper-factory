@@ -12,12 +12,12 @@
   body { background:var(--bg); color:var(--text);
          font:15px/1.55 -apple-system,"Segoe UI",sans-serif; padding:0 0 5rem; }
   a { color:var(--blue); }
-  main { max-width:960px; margin:0 auto; padding:0 1rem; }
+  main { max-width:980px; margin:0 auto; padding:0 1rem; }
 
   /* shared nav */
   nav { position:sticky; top:0; z-index:10; background:rgba(13,17,23,.92);
         border-bottom:1px solid var(--line); backdrop-filter:blur(6px); }
-  nav .in { max-width:960px; margin:0 auto; display:flex; gap:.2rem; align-items:center;
+  nav .in { max-width:980px; margin:0 auto; display:flex; gap:.2rem; align-items:center;
             padding:.6rem 1rem; flex-wrap:wrap; }
   nav .brand { font-weight:800; margin-right:.8rem; letter-spacing:-.01em; }
   nav .brand .dot { color:var(--green); }
@@ -25,27 +25,24 @@
           padding:.35rem .7rem; border-radius:8px; }
   nav a:hover { color:var(--text); background:var(--panel); }
   nav a.active { color:var(--text); background:var(--panel); }
+  nav .served { margin-left:auto; color:var(--muted); font-size:.72rem; }
+  nav .served code { color:var(--green); }
 
   h1 { font-size:2.1rem; letter-spacing:-.02em; line-height:1.1; }
   h2 { font-size:1.2rem; margin:2.8rem 0 .9rem; padding-bottom:.4rem; border-bottom:1px solid var(--line); }
-  h3 { font-size:1rem; margin:1.4rem 0 .5rem; }
   p { color:var(--text); }
   .sub { color:var(--muted); }
 
   .hero { padding:3rem 0 1rem; }
   .hero .kicker { color:var(--green); font-weight:700; font-size:.8rem; letter-spacing:.08em;
                   text-transform:uppercase; }
-  .hero p.lede { font-size:1.15rem; color:var(--muted); margin-top:.9rem; max-width:44rem; }
+  .hero p.lede { font-size:1.15rem; color:var(--muted); margin-top:.9rem; max-width:46rem; }
   .hero .ctas { margin-top:1.4rem; display:flex; gap:.6rem; flex-wrap:wrap; }
   .btn { display:inline-block; text-decoration:none; font-weight:600; font-size:.9rem;
          border-radius:9px; padding:.55rem 1rem; }
   .btn.primary { background:var(--blue); color:#0d1117; }
   .btn.ghost { border:1px solid var(--line); color:var(--text); }
   .btn.ghost:hover { border-color:var(--blue); }
-
-  .pill { display:inline-block; font-size:.7rem; font-weight:700; letter-spacing:.06em;
-          border:1px solid var(--line); border-radius:999px; padding:.1rem .55rem; color:var(--muted); }
-  .pill.green{color:var(--green);border-color:var(--green)}
 
   /* child-layer parable */
   .parable { background:linear-gradient(180deg,#161b22,#12161d); border:1px solid var(--line);
@@ -62,19 +59,32 @@
   .story-punch { margin-top:1.1rem; font-size:.95rem; color:var(--text); }
   .story-punch b { color:var(--green); }
 
-  /* product row */
-  .product { display:grid; grid-template-columns:1fr 1fr; gap:.8rem; margin-top:.6rem; }
-  .prod-card { background:var(--panel); border:1px solid var(--line); border-radius:14px;
-               padding:1.2rem; text-decoration:none; color:inherit; display:block; }
-  .prod-card:hover { border-color:var(--blue); }
-  .prod-card .top { display:flex; align-items:center; gap:.6rem; margin-bottom:.5rem; }
-  .prod-card .glyph { width:36px; height:36px; border-radius:9px; display:flex; align-items:center;
-                      justify-content:center; font-size:1.1rem; flex-shrink:0; }
-  .prod-card b { font-size:1rem; }
-  .prod-card p { color:var(--muted); font-size:.85rem; }
-  .prod-card .url { color:var(--blue); font-size:.8rem; margin-top:.5rem; word-break:break-all; }
+  /* see it live */
+  .live { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:.7rem; }
+  .live a, .live div.livecard { background:var(--panel); border:1px solid var(--line); border-radius:13px;
+            padding:1rem 1.1rem; text-decoration:none; color:inherit; display:block; }
+  .live a:hover { border-color:var(--blue); }
+  .live .top { display:flex; align-items:center; gap:.5rem; margin-bottom:.35rem; }
+  .live .glyph { width:30px; height:30px; border-radius:8px; display:flex; align-items:center;
+                 justify-content:center; font-size:1rem; flex-shrink:0; }
+  .live b { font-size:.95rem; }
+  .live p { color:var(--muted); font-size:.82rem; }
+  .live .url { color:var(--blue); font-size:.78rem; margin-top:.4rem; word-break:break-all; }
 
-  /* nav cards to other pages */
+  /* three loops at a glance */
+  .loops { display:grid; grid-template-columns:repeat(3,1fr); gap:.8rem; }
+  .loop { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:1.1rem 1.15rem; }
+  .loop .num { width:26px; height:26px; border-radius:50%; display:flex; align-items:center;
+               justify-content:center; font-weight:800; font-size:.85rem; margin-bottom:.5rem; }
+  .loop.l1 .num{background:#173a2a;color:var(--green)} .loop.l2 .num{background:#3a2a17;color:var(--yellow)}
+  .loop.l3 .num{background:#1a2a3c;color:var(--blue)}
+  .loop b { display:block; font-size:.95rem; margin-bottom:.35rem; }
+  .loop .chain { font-size:.76rem; color:var(--muted); line-height:1.6; font-family:ui-monospace,monospace; }
+  .loop .chain .hl { color:var(--text); }
+  .loop .proven { display:inline-block; margin-top:.6rem; font-size:.68rem; font-weight:700;
+                  color:var(--green); border:1px solid var(--green); border-radius:999px; padding:.05rem .5rem; }
+
+  /* nav cards */
   .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:.8rem; }
   .card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:1.2rem;
           text-decoration:none; color:inherit; display:block; transition:border-color .15s; }
@@ -86,10 +96,10 @@
 
   .note { background:var(--panel); border-left:3px solid var(--green); border-radius:8px;
           padding:.9rem 1.1rem; font-size:.92rem; margin-top:1.2rem; color:var(--text); }
-  footer { max-width:960px; margin:3rem auto 0; padding:1.5rem 1rem 0; border-top:1px solid var(--line);
+  footer { max-width:980px; margin:3rem auto 0; padding:1.5rem 1rem 0; border-top:1px solid var(--line);
            color:var(--muted); font-size:.82rem; }
   footer code { color:var(--text); }
-  @media (max-width:640px){ .product{grid-template-columns:1fr} h1{font-size:1.7rem} }
+  @media (max-width:760px){ .loops{grid-template-columns:1fr} h1{font-size:1.7rem} nav .served{display:none} }
 </style>
 </head>
 <body>
@@ -99,17 +109,18 @@
   <a href="architecture.html">Architecture</a>
   <a href="workforce.html">Workforce</a>
   <a href="platform.html">Platform</a>
+  <span class="served">served by the factory at <code>/</code></span>
 </div></nav>
 
 <main>
   <section class="hero">
-    <span class="kicker">Self-healing web scrapers, as a factory</span>
-    <h1>Scrapers rot. This treats it as an on-call problem.</h1>
-    <p class="lede">The Scraper Factory reads a week and a half of TV-guide data across Philo,
-    YouTube&nbsp;TV, and Sling, ranks the <b style="color:var(--text)">top&nbsp;10 shows and top&nbsp;10 movies</b>
-    by TMDB popularity, and gives you one click to record each title on Philo. When a scraper drifts,
-    a repair loop fixes it &mdash; but a deterministic inspector with a frozen checklist decides whether
-    the fix is real.</p>
+    <span class="kicker">A self-healing web-scraper factory, operated by Port</span>
+    <h1>Scrapers rot. This treats it as an on-call problem — and lets robots run the rotation.</h1>
+    <p class="lede">The Scraper Factory reads ~12 days of TV-guide data across Philo, YouTube&nbsp;TV,
+    and Sling, ranks the <b style="color:var(--text)">top&nbsp;10 shows and top&nbsp;10 movies</b> by
+    TMDB popularity, and gives you one click to record each title on Philo. Port schedules the scrapes
+    and reacts to failures; when a scraper breaks, a repair loop fixes it &mdash; but a deterministic
+    inspector with a frozen checklist decides whether the fix is real.</p>
     <div class="ctas">
       <a class="btn primary" href="https://scraper-factory-top20.vercel.app" target="_blank" rel="noopener">Open the live webapp →</a>
       <a class="btn ghost" href="architecture.html">See how it works</a>
@@ -119,80 +130,112 @@
   <!-- CHILD-FRIENDLY LAYER -->
   <div class="parable">
     <span class="tag">Explain it like I'm 10</span>
-    <p>Imagine a <b>robot factory</b> that reads the TV guide every day, picks the twenty best
-    things to watch, and puts them on a poster you can tap. Sometimes the TV-guide website
-    changes its shape and a reading-robot gets confused. So another robot tries to <b>fix</b>
-    the confused one. But before anyone trusts the fix, a <b>strict inspector</b> checks the
-    repaired robot against an answer sheet that never changes. No matching answer sheet? No promotion.</p>
+    <p>Imagine a <b>robot factory</b> that reads the TV guide every morning, picks the twenty best
+    things to watch, and puts them on a poster you can tap. A boss-robot (Port) rings the bell each
+    day so the reading-robots start on time. Sometimes the TV-guide website changes its shape and a
+    reading-robot gets confused, so another robot tries to <b>fix</b> it. But before anyone trusts the
+    fix, a <b>strict inspector</b> checks the repaired robot against an answer sheet that never changes.
+    No matching answer sheet? No promotion &mdash; the robot goes to the "needs a grown-up" pile.</p>
     <div class="story-steps">
+      <div class="step"><span class="emoji">⏰</span><b>Ring the bell</b><span>Port starts the day's scrape on a schedule</span></div>
       <div class="step"><span class="emoji">📺</span><b>Read</b><span>Robots read the guide, one channel page at a time</span></div>
-      <div class="step"><span class="emoji">🏆</span><b>Pick</b><span>Score every title, keep the top 10 shows + 10 movies</span></div>
-      <div class="step"><span class="emoji">📋</span><b>Show</b><span>Put them on a poster with a Record button</span></div>
+      <div class="step"><span class="emoji">🏆</span><b>Pick &amp; show</b><span>Score every title; put the top 10 shows + 10 movies on the poster</span></div>
       <div class="step"><span class="emoji">🔧</span><b>Fix</b><span>When a robot breaks, another robot repairs it</span></div>
-      <div class="step"><span class="emoji">🕵️</span><b>Inspect</b><span>An inspector checks the fix against a frozen answer sheet</span></div>
+      <div class="step"><span class="emoji">🕵️</span><b>Inspect</b><span>A plain checklist decides if the fix is real</span></div>
     </div>
-    <p class="story-punch"><b>The one rule:</b> the fixer can be a clever robot, but the inspector
-    is a plain checklist you can trust every single time. Judgment goes to the agent. Proof stays deterministic.</p>
+    <p class="story-punch"><b>The one rule:</b> the fixer can be a clever robot, but the inspector is a
+    plain checklist you can trust every single time. Judgment goes to the agents. Proof stays deterministic.</p>
   </div>
 
-  <h2>The product</h2>
-  <p class="sub">Two things you can open right now.</p>
-  <div class="product">
-    <a class="prod-card" href="https://scraper-factory-top20.vercel.app" target="_blank" rel="noopener">
-      <div class="top"><span class="glyph" style="background:#173a2a;color:var(--green)">▶</span><b>Top 10 webapp</b></div>
-      <p>A Next.js page: Shows on the left, Movies on the right, each a card that deep-links to
-      the title's Philo record page. It has no database &mdash; it reads Port's Context Lake at request time.</p>
+  <h2>See it live</h2>
+  <p class="sub">Four ways to look at the running system.</p>
+  <div class="live">
+    <a href="https://scraper-factory-top20.vercel.app" target="_blank" rel="noopener">
+      <div class="top"><span class="glyph" style="background:#173a2a;color:var(--green)">▶</span><b>The webapp</b></div>
+      <p>Top 10 Shows and Top 10 Movies, side by side, each linking to Philo's record page. Reads Port's Context Lake.</p>
       <div class="url">scraper-factory-top20.vercel.app</div>
     </a>
-    <a class="prod-card" href="http://localhost:8000/top20" target="_blank" rel="noopener">
+    <a href="http://localhost:8000/top20" target="_blank" rel="noopener">
       <div class="top"><span class="glyph" style="background:#1a3a5c;color:var(--blue)">/</span><b>Local /top20</b></div>
-      <p>The same ranking served straight from the factory's FastAPI service while you develop,
-      computed from SQLite + the TMDB cache. Also available as JSON at <code>/api/top20</code>.</p>
+      <p>The same ranking from the factory's own API while developing. Also JSON at <code>/api/top20</code>.</p>
       <div class="url">localhost:8000/top20</div>
     </a>
+    <div class="livecard">
+      <div class="top"><span class="glyph" style="background:#173a2a;color:var(--green)">P</span><b>Port — Factory Operator</b></div>
+      <p>The control plane: scraper health, heal events, ranked titles, the scorecard, and the AI agents. Where Port <b>operates</b> the factory.</p>
+    </div>
+    <div class="livecard">
+      <div class="top"><span class="glyph" style="background:#3a2a17;color:var(--yellow)">S</span><b>SigNoz</b></div>
+      <p>Traces, metrics, logs &mdash; correlated. Every scrape, heal, and even Port's call to <code>/heal</code> shows up as a span.</p>
+    </div>
   </div>
 
+  <h2>The whole thing is three loops</h2>
+  <div class="loops">
+    <div class="loop l1">
+      <div class="num">1</div>
+      <b>Daily production</b>
+      <div class="chain"><span class="hl">Port cron</span> → /run → guide<br>→ scrape_run → <span class="hl">wf_publish_on_success</span><br>→ /publish → lake → webapp</div>
+      <span class="proven">proven E2E</span>
+    </div>
+    <div class="loop l2">
+      <div class="num">2</div>
+      <b>Self-heal</b>
+      <div class="chain">bad run → <span class="hl">wf_heal_on_bad_run</span><br>→ /heal → scraper heal<br>→ <span class="hl">deterministic verifier</span><br>→ approve / reject → human</div>
+      <span class="proven">reject proven</span>
+    </div>
+    <div class="loop l3">
+      <div class="num">3</div>
+      <b>Software change</b>
+      <div class="chain">feature request → /feature<br>→ <span class="hl">local Claude builder</span> → PR<br>→ CI (no LLM) → human merge<br>→ deploy → Port</div>
+      <span class="proven">gated by humans + CI</span>
+    </div>
+  </div>
+  <div class="note">All three share one rule: an agent decides <em>what</em> broke or <em>what</em> to
+  build; plain deterministic code &mdash; a fixture diff, a CI run &mdash; decides whether it's real.
+  The self-heal loop has even been proven on the <em>unhappy</em> path: a bad repair was correctly
+  <b>rejected</b> by the verifier and escalated to a human. That rejection is the system working.</div>
+
   <h2>The thesis, for grown-ups</h2>
-  <p>Web scrapers are fragile by nature: a guide site ships a redesign, selectors stop matching,
-  and the data either stops arriving or &mdash; worse &mdash; arrives subtly wrong. The Scraper
-  Factory treats that as a reliability problem with an on-call rotation. Scrapers are catalogued
-  services with health states. Every run is traced. Drift is an alert. Repair is an automated loop
-  that must prove itself against a frozen fixture before its output is trusted, and escalates to a
-  human when it can't.</p>
-  <div class="note">Built on <b>Port</b> (control plane: catalog, actions, automations, scorecards,
-  dashboards, AI agents), <b>Bright Data Scraper Studio</b> (the scrapers, plus self-healing),
-  <b>SigNoz</b> (traces, metrics, logs), and <b>TMDB</b> (ranking signal).</div>
+  <p>Web scrapers are fragile by nature: a guide site ships a redesign, selectors stop matching, and the
+  data either stops arriving or &mdash; worse &mdash; arrives subtly wrong. The Scraper Factory treats
+  that as a reliability problem with an on-call rotation. Scrapers are catalogued services with health
+  states. Every run is traced. Drift is an alert. Repair is an automated loop that must prove itself
+  against a frozen fixture before its output is trusted, and escalates to a human when it can't. Built on
+  <b>Port</b> (control plane + operator), <b>Bright Data Scraper Studio</b> (scraping + self-healing),
+  <b>SigNoz</b> (traces, metrics, logs), and <b>TMDB</b> (the ranking signal).</p>
 
   <h2>Read the rest</h2>
   <div class="cards">
     <a class="card" href="architecture.html">
       <span class="n">🗺️</span>
       <b>Architecture</b>
-      <p>The big diagrams: the data pipeline, the fetch/extract relay split, the self-heal loop
-      with its deterministic gate, and the requirement→PR→deploy slice.</p>
+      <p>The big diagrams: the data pipeline, the fetch/extract relay split, the self-heal loop with its
+      deterministic gate, and the requirement→PR→deploy slice.</p>
       <span class="go">Open the diagrams →</span>
     </a>
     <a class="card" href="workforce.html">
       <span class="n">🤖</span>
       <b>The agent workforce</b>
-      <p>Who does what: the roster of workers and agents, which are robots and which are humans,
-      and why the Anthropic credentials never leave the operator's machine.</p>
+      <p>Who does what: the roster of workers and agents, which are robots and which are humans, and why
+      the Anthropic credentials never leave the operator's machine.</p>
       <span class="go">Meet the workforce →</span>
     </a>
     <a class="card" href="platform.html">
       <span class="n">🧱</span>
       <b>The platform</b>
-      <p>Port pillars as actually used here, SigNoz signals, Bright Data collectors + the policy
-      that forced the relay, and the full schema grid.</p>
+      <p>Port pillars as used here, how Port operates the factory, SigNoz signals, Bright Data collectors
+      + the policy that forced the relay, and the schema grid.</p>
       <span class="go">Inspect the platform →</span>
     </a>
   </div>
 
   <footer>
-    Demo flow: <code>make run</code> → <code>make rank</code> → <code>make publish</code> ·
-    manufacture drift: <code>make demo-drift</code> ·
-    the gate: <code>make verify</code> ·
-    this site is self-contained &mdash; open <code>demo/index.html</code> in any browser.
+    This site is the factory's front door: the FastAPI service serves it at <code>/</code> (and
+    <code>/architecture.html</code>, <code>/workforce.html</code>, <code>/platform.html</code>) alongside
+    the API routes &mdash; it is also fully self-contained, so <code>open demo/index.html</code> works
+    offline. Demo flow: <code>make run</code> → <code>make rank</code> → <code>make publish</code> ·
+    manufacture drift: <code>make demo-drift</code> · the gate: <code>make verify</code>.
   </footer>
 </main>
 </body>

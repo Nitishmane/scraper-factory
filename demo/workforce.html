@@ -186,6 +186,10 @@
   <p class="note">Four of the Port AI agents above (Triage, Heal Explainer, On-Call Assistant, Catalog
   Coverage) are the factory's own; the Port workspace also carries stock demo agents from the Port
   quickstart. Only the four listed here are wired into this system.</p>
+  <p class="note" style="border-left-color:var(--green)">Every Port → factory call (the Runner, Healer
+  trigger, and Intake webhooks) is a token-gated <code>POST</code>: a shared secret
+  <code>FACTORY_WEBHOOK_TOKEN</code> baked into the provisioned webhook URLs, constant-time compared, with
+  a bare call rejected <code>401</code>. So only the operator's own Port org can drive the workforce.</p>
 
   <h2>The doctrine: judgment to agents, proof stays deterministic</h2>
   <p class="kid">A clever robot can guess the fix, but a plain checklist &mdash; not a robot &mdash; decides if it's really fixed.</p>
