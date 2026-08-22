@@ -196,13 +196,34 @@ def dashboard_payload() -> dict:
                    "disabled": False}],
         y_unit="s",
     )
+    # --- control-plane pull bridges ----------------------------------------
+    # brightdata.budget.remaining is a gauge (latest value); port.action.runs and
+    # port.workflow.runs are counters (increase per window), grouped by status. These are
+    # simple sum/latest -- no histogram-quantile quirk to work around here.
+    w_budget = _widget(
+        "bd_budget", "Bright Data budget remaining ($)",
+        "brightdata.budget.remaining -- polled from the CLI (Bright Data does not push it)",
+        "graph",
+        [_query("A", "brightdata.budget.remaining", "Gauge", "latest", "max")],
+        y_unit="none",
+    )
+    w_port = _widget(
+        "port_activity", "Port control-plane activity",
+        "port.action.runs + port.workflow.runs by status -- polled from Port's API "
+        "(Port does not push run activity)",
+        "graph",
+        [
+            _query("A", "port.action.runs", "Sum", "increase", "sum", group_by="status"),
+            _query("B", "port.workflow.runs", "Sum", "increase", "sum", group_by="status"),
+        ],
+    )
     w11 = _widget(
         "recent_logs", "Recent logs (scraper-factory)",
         "trace-correlated application logs from the service and CLI runs",
         "list",
         [_logs_query("A", os.getenv("OTEL_SERVICE_NAME", "scraper-factory"))],
     )
-    widgets = [w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11]
+    widgets = [w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w_budget, w_port, w11]
     layout = []
     y = 0
     for n, w in enumerate(widgets):

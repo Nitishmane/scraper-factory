@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from factory import brightdata, detect, pipeline, port, state
+from factory import brightdata, detect, pipeline, port, portwatch, state
 from factory.agents import verifier
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "channel.expected.json"
@@ -202,6 +202,83 @@ def test_run_once_clean_success_sets_healthy(isolated_state, monkeypatch):
     result = pipeline.run_once("philo", days=7)
     assert not result["drift"], result["drift_description"]
     assert ("c_test", "healthy") in health_calls
+
+
+# --- portwatch new-run diffing -----------------------------------------------------
+
+
+def test_portwatch_emits_each_run_once(isolated_state, monkeypatch):
+    """Feeding the same Port payloads twice emits counters only on the first pass.
+
+    portwatch dedups on state.seen_run (durable), so a restart or overlapping tick never
+    re-counts a run. We capture the counter .add() calls instead of talking to OTLP/Port.
+    """
+    actions_payload = {
+        "runs": [
+            {"id": "r_1", "status": "SUCCESS", "action": {"identifier": "publish_now"}},
+            {"id": "r_2", "status": "FAILURE", "action": {"identifier": "run_scrape_now"}},
+        ]
+    }
+    workflows_payload = {
+        "workflowRuns": [
+            {
+                "identifier": "wfr_1",
+                "status": "WAITING_FOR_INPUT",
+                "workflowVersion": {"workflow": {"identifier": "repair_scraper"}},
+            }
+        ]
+    }
+    monkeypatch.setattr(
+        portwatch,
+        "_fetch",
+        lambda path, params=None: (
+            actions_payload if path == "actions/runs" else workflows_payload
+        ),
+    )
+    # Budget poll is out of scope for this test -- stub it to a no-op emit.
+    monkeypatch.setattr(portwatch.brightdata, "budget", lambda: None)
+
+    action_emits: list[tuple] = []
+    workflow_emits: list[tuple] = []
+
+    class _Counter:
+        def __init__(self, sink):
+            self.sink = sink
+
+        def add(self, amount, attrs):
+            self.sink.append((amount, attrs))
+
+    counters = {
+        "port_action_runs": _Counter(action_emits),
+        "port_workflow_runs": _Counter(workflow_emits),
+    }
+    monkeypatch.setattr(
+        portwatch.telemetry, "metric", lambda name: counters.get(name, _Counter([]))
+    )
+
+    portwatch.tick()
+    assert len(action_emits) == 2, "first pass should emit both action runs"
+    assert len(workflow_emits) == 1, "first pass should emit the workflow run"
+    # Attributes carry the action/workflow identifier and status.
+    assert {a[1]["action"] for a in action_emits} == {"publish_now", "run_scrape_now"}
+    assert workflow_emits[0][1] == {"workflow": "repair_scraper", "status": "WAITING_FOR_INPUT"}
+
+    action_emits.clear()
+    workflow_emits.clear()
+
+    portwatch.tick()
+    assert action_emits == [], "second pass must emit nothing new (already seen)"
+    assert workflow_emits == [], "second pass must emit nothing new (already seen)"
+
+
+def test_portwatch_tick_never_raises(isolated_state, monkeypatch):
+    """A failing Port fetch is a warning, not an exception out of the tick."""
+    def _boom(path, params=None):
+        raise RuntimeError("port down")
+
+    monkeypatch.setattr(portwatch, "_fetch", _boom)
+    monkeypatch.setattr(portwatch.brightdata, "budget", lambda: None)
+    portwatch.tick()  # must not raise
 
 
 # --- pipeline._parse_card_times ----------------------------------------------------

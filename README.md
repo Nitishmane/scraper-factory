@@ -328,6 +328,17 @@ endpoint.
   "alert when data stops coming" rule for the dead-pipeline case. Provisioned (dashboard, alert,
   webhook channel) by `scripts/bootstrap_signoz.py`.
 
+**Two pull bridges.** Most signals are pushed by the pipeline as it runs, but Port's
+control-plane activity and Bright Data's account budget are not things those systems push
+anywhere — so the factory polls them. A background watcher (`portwatch.py`, started with the
+FastAPI service) reads Port's action-run and workflow-run listings every `PORT_WATCH_INTERVAL_S`
+seconds and re-emits each new run as the `port.action.runs` / `port.workflow.runs` counters
+(labelled by action/workflow and status), and it samples `brightdata budget` into the
+`brightdata.budget.remaining` gauge (a scraping-only Bright Data key can't read the balance, so
+that gauge stays empty rather than erroring). Both feed the "Port control-plane activity" and
+"Bright Data budget remaining" dashboard panels. Runs are de-duplicated in SQLite so a restart
+never double-counts.
+
 ### Bright Data — the scrapers
 
 | Collector | Target | Promotion gate |

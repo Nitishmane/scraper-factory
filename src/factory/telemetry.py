@@ -140,6 +140,20 @@ def _build_metrics() -> None:
         tmdb_cache=m.create_counter(
             "tmdb.cache", description="TMDB enrichment cache lookups (attr hit=true/false)"
         ),
+        # --- control-plane pull bridges -------------------------------------
+        # Port and Bright Data do not push; portwatch polls their APIs/CLI and re-emits.
+        port_action_runs=m.create_counter(
+            "port.action.runs",
+            description="Port self-service action runs seen (attrs action, status)",
+        ),
+        port_workflow_runs=m.create_counter(
+            "port.workflow.runs",
+            description="Port workflow runs seen (attrs workflow, status)",
+        ),
+        brightdata_budget=m.create_gauge(
+            "brightdata.budget.remaining",
+            description="Bright Data account balance remaining, USD (None if unreadable)",
+        ),
     )
 
 

@@ -59,6 +59,12 @@ CREATE TABLE IF NOT EXISTS lineup (
     updated_at  TEXT NOT NULL,
     PRIMARY KEY (provider, url)
 );
+CREATE TABLE IF NOT EXISTS seen_run (
+    kind        TEXT NOT NULL,
+    run_id      TEXT NOT NULL,
+    seen_at     TEXT NOT NULL,
+    PRIMARY KEY (kind, run_id)
+);
 """
 
 
@@ -226,6 +232,24 @@ def lineup(provider: str) -> list[dict[str, Any]]:
             (provider,),
         )
         return [{"channel": row[0], "url": row[1]} for row in cur.fetchall()]
+
+
+# ---- control-plane run dedup (portwatch) --------------------------------------------
+
+
+def mark_run_seen(kind: str, run_id: str) -> bool:
+    """Record a control-plane run id. Returns True if it is NEW (first time seen).
+
+    portwatch calls this per run so a restart or an overlapping poll never re-emits a run
+    already bridged into telemetry. `kind` namespaces the id space ("action" vs "workflow").
+    """
+    with _conn() as conn:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO seen_run (kind, run_id, seen_at) "
+            "VALUES (?, ?, datetime('now'))",
+            (kind, run_id),
+        )
+        return cur.rowcount > 0
 
 
 # ---- TMDB cache ---------------------------------------------------------------------

@@ -273,6 +273,7 @@ def run_once(
 
             duration_ms = (time.perf_counter() - started) * 1000
             telemetry.metric("run_duration").record(duration_ms, {"target.provider": provider})
+            _emit_budget()
             trace_url = telemetry.trace_url()
 
             _write_run(run_id, cid, provider, rows, len(pages), drift, trace_url)
@@ -303,6 +304,7 @@ def run_once(
             telemetry.metric("run_failures").add(
                 1, {"target.provider": provider, "error.type": type(exc).__name__}
             )
+            _emit_budget()
             telemetry.log().error(
                 "scrape run %s for %s FAILED: %s", run_id, provider, error_detail
             )
@@ -311,6 +313,20 @@ def run_once(
                 telemetry.trace_url(), status="error", error_detail=error_detail,
             )
             raise
+
+
+def _emit_budget() -> None:
+    """Best-effort Bright Data budget gauge at run end. Never breaks a run.
+
+    A scrape spends budget, so the end of a run is the natural place to sample what's left.
+    Bright Data doesn't push this; we poll the CLI. None (unreadable balance) is not emitted.
+    """
+    try:
+        remaining = brightdata.budget()
+        if remaining is not None:
+            telemetry.metric("brightdata_budget").set(remaining)
+    except Exception as exc:  # a budget read must never fail a scrape
+        telemetry.log().warning("could not emit brightdata budget gauge: %s", exc)
 
 
 def _scrape_page(cid: str, url: str) -> tuple[list[dict[str, Any]], str, bool]:

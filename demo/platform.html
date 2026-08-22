@@ -185,12 +185,21 @@
       </ul></div>
     <div class="sig"><b>Dashboard + alert</b><div class="where">provisioned by bootstrap_signoz.py</div>
       <ul>
-        <li>11-widget dashboard</li>
+        <li>13-widget dashboard</li>
         <li>alert: <code>drift.detected &gt; 0</code></li>
         <li><span>5-min window, checked every minute</span></li>
         <li>"data stopped" → heal webhook</li>
       </ul></div>
   </div>
+
+  <p style="margin-top:1rem"><b>Two pull bridges.</b> Most signals are pushed by the pipeline as it
+  runs, but Port's control-plane activity and Bright Data's account budget aren't things those
+  systems push anywhere &mdash; so the factory polls them. A background watcher
+  (<code>portwatch.py</code>, started with the API) reads Port's action-run and workflow-run
+  listings on an interval and re-emits each new run as the <code>port.action.runs</code> /
+  <code>port.workflow.runs</code> counters, and it samples <code>brightdata budget</code> into the
+  <code>brightdata.budget.remaining</code> gauge. Both drive their own dashboard panels; new runs
+  are de-duplicated in SQLite so a restart never double-counts.</p>
 
   <h2>Bright Data — collectors, healing, and the relay</h2>
   <div class="note">

@@ -126,6 +126,57 @@ def fetch_html(url: str) -> str:
     return _run(["scrape", url, "-f", "html"], parse_json=False)
 
 
+def budget() -> float | None:
+    """Remaining Bright Data account balance in USD, or None if it can't be read.
+
+    Parses `brightdata budget balance --json`. The balance endpoint needs an account-scoped
+    token; a scraping-only key gets a 403 and the CLI prints a human-readable error to stdout
+    with exit 0 (not JSON) -- that, and any parse failure, yields None rather than raising.
+    Never raises: a budget read must never break a scrape or the startup path that emits it.
+    """
+    try:
+        proc = subprocess.run(
+            [BIN, "budget", "balance", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT,
+        )
+        out = (proc.stdout or "").strip()
+        try:
+            data = json.loads(out)
+        except json.JSONDecodeError:
+            # 403 / permission errors print prose to stdout, not JSON.
+            telemetry.log().warning("brightdata budget unreadable: %s", out[:200])
+            return None
+        return _dig_balance(data)
+    except Exception as exc:  # missing binary, timeout, etc. -- never fatal
+        telemetry.log().warning("brightdata budget read failed: %s", exc)
+        return None
+
+
+def _dig_balance(data: Any) -> float | None:
+    """Pull a numeric balance out of the budget JSON, whatever the exact key path.
+
+    Bright Data's balance shape isn't stably documented; try the balance-ish keys and fall
+    back to the first top-level number so a shape change degrades to a value, not a None.
+    """
+    if isinstance(data, (int, float)):
+        return float(data)
+    if isinstance(data, dict):
+        for key in ("balance", "remaining", "amount", "available", "credit", "usd", "value"):
+            val = data.get(key)
+            if isinstance(val, (int, float)):
+                return float(val)
+            if isinstance(val, dict):  # e.g. {"balance": {"amount": 12.3}}
+                nested = _dig_balance(val)
+                if nested is not None:
+                    return nested
+        for val in data.values():  # last resort: first numeric anywhere in the object
+            if isinstance(val, (int, float)):
+                return float(val)
+    return None
+
+
 # Bright Data policy (confirmed by their support engineer): collector runs cannot reach
 # streaming-media domains; the endorsed pattern is Web Unlocker fetch + collector extract.
 # After the first rejection in a process, skip the doomed direct attempts.

@@ -16,11 +16,14 @@ Endpoints:
 """
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import datetime as dt
 import hmac
 import html as html_lib
 import os
 import re
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -29,11 +32,35 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import brightdata, catalog, pipeline, port, publish, rank, telemetry
+from . import brightdata, catalog, pipeline, port, portwatch, publish, rank, telemetry
 from .agents import builder, healer, verifier
 
 telemetry.init()
-app = FastAPI(title="Scraper Factory")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start the Port/Bright Data pull bridge as a background task, if Port creds exist.
+
+    Port and Bright Data don't push their control-plane activity or budget; portwatch polls
+    them and re-emits into telemetry. Guarded so a credential-less local run still boots.
+    """
+    task: asyncio.Task | None = None
+    if portwatch.creds_present():
+        task = asyncio.create_task(portwatch.watch())
+        telemetry.log().info("portwatch background task scheduled")
+    else:
+        telemetry.log().info("portwatch disabled: Port credentials not set")
+    try:
+        yield
+    finally:
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+
+app = FastAPI(title="Scraper Factory", lifespan=lifespan)
 
 
 def _require_token(request: Request) -> None:
