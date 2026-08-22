@@ -17,19 +17,31 @@ import httpx  # noqa: E402
 
 from factory import port, telemetry  # noqa: E402
 
-HEAL_WEBHOOK = os.getenv("HEAL_WEBHOOK_URL", "http://localhost:8000/heal")
-BUILD_WEBHOOK = os.getenv("BUILD_WEBHOOK_URL", "http://localhost:8000/build")
+def _tokened(url: str) -> str:
+    """Append the shared webhook token so only our Port org can drive the factory.
+
+    The token rides as a query param (not a header) because Port workflow webhook nodes,
+    automations, actions, and the SigNoz channel all accept a URL verbatim — one mechanism
+    covers every caller. The FastAPI side verifies it constant-time on every webhook route.
+    """
+    token = os.getenv("FACTORY_WEBHOOK_TOKEN", "")
+    if not token:
+        return url
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}token={token}"
+
+
+HEAL_WEBHOOK = _tokened(os.getenv("HEAL_WEBHOOK_URL", "http://localhost:8000/heal"))
+BUILD_WEBHOOK = _tokened(os.getenv("BUILD_WEBHOOK_URL", "http://localhost:8000/build"))
 # The Claude builder runs locally behind the FastAPI service (no Anthropic creds in GitHub
 # Actions), so the feature-request action posts to /feature. Point FEATURE_WEBHOOK_URL at a
 # public tunnel in .env, exactly like HEAL_WEBHOOK_URL / BUILD_WEBHOOK_URL.
-FEATURE_WEBHOOK = os.getenv("FEATURE_WEBHOOK_URL", "http://localhost:8000/feature")
+FEATURE_WEBHOOK = _tokened(os.getenv("FEATURE_WEBHOOK_URL", "http://localhost:8000/feature"))
 
-# Endpoints driven by Port Workflows + self-service actions (Phase 3). A teammate is building
-# /run, /catalog, /publish on the FastAPI service; these may 404 briefly until it is up. Point
-# them at a public tunnel in .env exactly like the webhooks above.
-RUN_WEBHOOK = os.getenv("RUN_WEBHOOK_URL", "http://localhost:8000/run")
-CATALOG_WEBHOOK = os.getenv("CATALOG_WEBHOOK_URL", "http://localhost:8000/catalog")
-PUBLISH_WEBHOOK = os.getenv("PUBLISH_WEBHOOK_URL", "http://localhost:8000/publish")
+# Endpoints driven by Port Workflows + self-service actions (Phase 3).
+RUN_WEBHOOK = _tokened(os.getenv("RUN_WEBHOOK_URL", "http://localhost:8000/run"))
+CATALOG_WEBHOOK = _tokened(os.getenv("CATALOG_WEBHOOK_URL", "http://localhost:8000/catalog"))
+PUBLISH_WEBHOOK = _tokened(os.getenv("PUBLISH_WEBHOOK_URL", "http://localhost:8000/publish"))
 
 DATA_SOURCE = {
     "identifier": "data_source",

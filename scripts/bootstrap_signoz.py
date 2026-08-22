@@ -22,10 +22,11 @@ HEADERS = {"SIGNOZ-API-KEY": KEY, "Content-Type": "application/json"}
 DASHBOARD_TITLE = "Scraper Factory"
 ALERT_NAME = "Scraper drift detected"
 CHANNEL_NAME = "factory-heal-webhook"
-# SigNoz runs in docker; localhost inside its container is not the host.
-WEBHOOK_URL = os.getenv(
-    "SIGNOZ_HEAL_WEBHOOK", "http://host.docker.internal:8000/heal"
-)
+# SigNoz runs in docker; localhost inside its container is not the host. SigNoz webhook
+# channels can't send custom headers, so the shared factory token rides in the URL.
+_base = os.getenv("SIGNOZ_HEAL_WEBHOOK", "http://host.docker.internal:8000/heal")
+_token = os.getenv("FACTORY_WEBHOOK_TOKEN", "")
+WEBHOOK_URL = f"{_base}{'&' if '?' in _base else '?'}token={_token}" if _token else _base
 
 
 def _metric(key: str, mtype: str) -> dict:

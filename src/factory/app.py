@@ -17,11 +17,13 @@ Endpoints:
 from __future__ import annotations
 
 import datetime as dt
+import hmac
 import html as html_lib
+import os
 import re
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
@@ -30,6 +32,29 @@ from .agents import builder, healer, verifier
 
 telemetry.init()
 app = FastAPI(title="Scraper Factory")
+
+
+def _require_token(request: Request) -> None:
+    """Shared-secret gate on every webhook route (Port workflows/actions + SigNoz).
+
+    Callers carry the token as ?token=... (baked into the provisioned webhook URLs by the
+    bootstrap scripts) or an x-factory-token header. When FACTORY_WEBHOOK_TOKEN is unset
+    the gate is open — local dev without provisioned webhooks still works.
+    """
+    expected = os.getenv("FACTORY_WEBHOOK_TOKEN", "")
+    if not expected:
+        return
+    supplied = (
+        request.query_params.get("token")
+        or request.headers.get("x-factory-token")
+        or ""
+    )
+    if not hmac.compare_digest(supplied, expected):
+        telemetry.log().warning("rejected unauthenticated webhook call to %s", request.url.path)
+        raise HTTPException(status_code=401, detail="missing or invalid factory token")
+
+
+webhook_auth = [Depends(_require_token)]
 
 
 class HealRequest(BaseModel):
@@ -133,7 +158,7 @@ _PAGE = """<!doctype html>
 </body></html>"""
 
 
-@app.post("/heal")
+@app.post("/heal", dependencies=webhook_auth)
 def heal(req: HealRequest, background: BackgroundTasks) -> dict[str, Any]:
     """Idempotent entry point shared by both trigger paths.
 
@@ -156,7 +181,7 @@ def heal(req: HealRequest, background: BackgroundTasks) -> dict[str, Any]:
     return {"accepted": True, "provider": provider, "collector_id": collector_id}
 
 
-@app.post("/build")
+@app.post("/build", dependencies=webhook_auth)
 def build(req: BuildRequest) -> dict[str, Any]:
     """Port self-service action backend: a brief in, a verified scraper out."""
     with telemetry.tracer().start_as_current_span("factory.build") as span:
@@ -194,7 +219,7 @@ def build(req: BuildRequest) -> dict[str, Any]:
         }
 
 
-@app.post("/feature")
+@app.post("/feature", dependencies=webhook_auth)
 async def feature(request: Request, background: BackgroundTasks) -> dict[str, Any]:
     """Port self-service action backend: a requirement in, a pull request out.
 
@@ -290,7 +315,7 @@ def _feature_fields(body: dict[str, Any]) -> tuple[str | None, str | None, str, 
     return title, details, kind, str(run_id) if run_id else None
 
 
-@app.post("/run")
+@app.post("/run", dependencies=webhook_auth)
 async def run(request: Request, background: BackgroundTasks) -> dict[str, Any]:
     """Port self-service action backend: scrape one provider or all, in the background.
 
@@ -322,7 +347,7 @@ async def run(request: Request, background: BackgroundTasks) -> dict[str, Any]:
     return {"accepted": True, "providers": providers, "days": days}
 
 
-@app.post("/catalog")
+@app.post("/catalog", dependencies=webhook_auth)
 def refresh_catalog(background: BackgroundTasks) -> dict[str, Any]:
     """Port self-service action backend: refresh the Philo record-link catalog in the background."""
     telemetry.log().info("catalog refresh request accepted")
@@ -337,7 +362,7 @@ def refresh_catalog(background: BackgroundTasks) -> dict[str, Any]:
     return {"accepted": True}
 
 
-@app.post("/publish")
+@app.post("/publish", dependencies=webhook_auth)
 def publish_top20(background: BackgroundTasks) -> dict[str, Any]:
     """Port self-service action backend: rank + push the top-20 to Port, in the background."""
     telemetry.log().info("publish request accepted")
