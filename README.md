@@ -317,3 +317,5 @@ case.
   by `bootstrap_port.py` and `bootstrap_signoz.py`.
 - **No retry/backoff on Bright Data calls.** A transient CLI failure surfaces as an error
   (mitigated for fetches by the 30-minute relay cache, `RELAY_CACHE_MINUTES`).
+
+<!-- ci-gate smoke test: verifies CI runs both jobs; safe to delete -->
