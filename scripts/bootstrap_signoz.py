@@ -92,8 +92,24 @@ def _logs_query(name: str, service: str) -> dict:
     }
 
 
+def _threshold(label: str, value: float, color: str = "#e5484d") -> dict:
+    """A single SigNoz panel threshold band (default red). Applied above `value`."""
+    return {
+        "index": label,
+        "keyIndex": 0,
+        "moveThreshold": 0,
+        "thresholdValue": value,
+        "thresholdFormat": "Text",
+        "thresholdOperator": ">",
+        "thresholdUnit": "none",
+        "thresholdColor": color,
+        "thresholdLabel": label,
+    }
+
+
 def _widget(widget_id: str, title: str, description: str, panel: str, queries: list[dict],
-            formulas: list[dict] | None = None, y_unit: str = "none") -> dict:
+            formulas: list[dict] | None = None, y_unit: str = "none",
+            thresholds: list[dict] | None = None) -> dict:
     return {
         "id": widget_id,
         "title": title,
@@ -106,7 +122,7 @@ def _widget(widget_id: str, title: str, description: str, panel: str, queries: l
         "yAxisUnit": y_unit,
         "softMax": None,
         "softMin": None,
-        "thresholds": [],
+        "thresholds": thresholds or [],
         "query": {
             "queryType": "builder",
             "promql": [],
@@ -116,11 +132,20 @@ def _widget(widget_id: str, title: str, description: str, panel: str, queries: l
     }
 
 
+def _value_query(name: str, mtype: str, time_agg: str, space_agg: str,
+                 reduce_to: str = "sum") -> dict:
+    """A single-number query for a `value` panel: reduceTo collapses the series to one point."""
+    q = _query("A", name, mtype, time_agg, space_agg)
+    q["reduceTo"] = reduce_to
+    return q
+
+
 def dashboard_payload() -> dict:
     w1 = _widget(
         "drift", "Drift detections", "scraper.drift.detected -- what the alert watches",
         "graph",
         [_query("A", "scraper.drift.detected", "Sum", "increase", "sum", group_by_provider=True)],
+        thresholds=[_threshold("drift", 0)],
     )
     w2 = _widget(
         "heal", "Heals: success vs attempts", "the headline reliability number",
@@ -217,25 +242,84 @@ def dashboard_payload() -> dict:
             _query("B", "port.workflow.runs", "Sum", "increase", "sum", group_by="status"),
         ],
     )
+    # Failure-visibility metric added today; grouped by provider (error.type is also on the
+    # series and shows in the legend hover). Red threshold: any failure is worth a look.
+    w_failures = _widget(
+        "run_failures", "Run failures",
+        "scraper.run.failures by provider -- fault-injection + real scrape errors",
+        "graph",
+        [_query("A", "scraper.run.failures", "Sum", "increase", "sum",
+                group_by_provider=True)],
+        thresholds=[_threshold("failure", 0)],
+    )
     w11 = _widget(
         "recent_logs", "Recent logs (scraper-factory)",
         "trace-correlated application logs from the service and CLI runs",
         "list",
         [_logs_query("A", os.getenv("OTEL_SERVICE_NAME", "scraper-factory"))],
     )
-    widgets = [w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w_budget, w_port, w11]
-    layout = []
+
+    # --- overview row: compact single-number "value" panels (verified to persist on
+    # SigNoz v0.111.0). At-a-glance health above the detailed graphs.
+    o1 = _widget(
+        "ov_rows", "Rows returned (latest)",
+        "scraper.rows_returned, most recent run across providers",
+        "value",
+        [_value_query("scraper.rows_returned", "Gauge", "latest", "max", reduce_to="last")],
+    )
+    o2 = _widget(
+        "ov_drift", "Drift detections (24h)",
+        "scraper.drift.detected summed over the window",
+        "value",
+        [_value_query("scraper.drift.detected", "Sum", "increase", "sum", reduce_to="sum")],
+        thresholds=[_threshold("drift", 0)],
+    )
+    o3 = _widget(
+        "ov_failures", "Run failures (24h)",
+        "scraper.run.failures summed over the window",
+        "value",
+        [_value_query("scraper.run.failures", "Sum", "increase", "sum", reduce_to="sum")],
+        thresholds=[_threshold("failure", 0)],
+    )
+    o4 = _widget(
+        "ov_heals", "Heal successes (total)",
+        "scraper.heal.success -- promotions that passed the fixture gate",
+        "value",
+        [_value_query("scraper.heal.success", "Sum", "sum", "sum", reduce_to="sum")],
+    )
+
+    # Logical rows via an explicit react-grid-layout array (12-col grid). Each dict:
+    # i=widget id, x/y grid coords, w/h span. Ordered top-to-bottom by section.
+    overview = [o1, o2, o3, o4]
+    scrape_pipeline = [w7, w3, w6, w8, w4]          # rows extracted, rows by provider, fetch dur, relay, run dur
+    heal_loop = [w1, w9, w2, w5, w_failures]        # drift, heal outcomes, heals s/a, verify, failures
+    control_plane = [w_port, w10, w_budget]         # port activity, port latency, budget
+    logs_row = [w11]
+    widgets = overview + scrape_pipeline + heal_loop + control_plane + logs_row
+
+    layout: list[dict] = []
     y = 0
-    for n, w in enumerate(widgets):
-        if w["id"] == "recent_logs":
-            layout.append({"i": w["id"], "x": 0, "y": y + 100, "w": 12, "h": 5,
-                           "moved": False, "static": False})
-        else:
-            layout.append({"i": w["id"], "x": (n % 2) * 6, "y": (n // 2) * 3, "w": 6,
-                           "h": 3, "moved": False, "static": False})
+
+    def _row(items: list[dict], w: int, h: int) -> None:
+        nonlocal y
+        per_row = max(1, 12 // w)
+        for i, wid in enumerate(items):
+            if i and i % per_row == 0:
+                y += h
+            layout.append({"i": wid["id"], "x": (i % per_row) * w, "y": y,
+                           "w": w, "h": h, "moved": False, "static": False})
+        y += h
+
+    _row(overview, w=3, h=2)          # 4 compact value tiles across the top
+    _row(scrape_pipeline, w=6, h=3)   # two-up graphs
+    _row(heal_loop, w=6, h=3)
+    _row(control_plane, w=6, h=3)
+    _row(logs_row, w=12, h=6)         # full-width logs at the bottom
+
     return {
         "title": DASHBOARD_TITLE,
-        "description": "Self-healing scraper factory: drift, heals, verification, volume.",
+        "description": "Self-healing scraper factory: overview, scrape pipeline, heal loop, "
+                       "control plane, and logs.",
         "tags": ["scraper-factory"],
         "layout": layout,
         "widgets": widgets,
