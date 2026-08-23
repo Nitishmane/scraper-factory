@@ -21,6 +21,9 @@ rule that ties it together:
 > the repair is *real*. A gate you can't trust deterministically isn't a gate.
 
 **Live webapp:** <https://scraper-factory-top20.vercel.app>
+**Live factory service** (demo site + `/top20` + `/api/top20`, tunneled from the demo
+machine — up while the factory laptop runs; quick-tunnel URLs rotate on restart):
+<https://tree-doc-shuttle-ordered.trycloudflare.com>
 **The factory's own front door:** `GET /` on the running service (serves the demo site below)
 **Demo walkthrough:** [`demo/index.html`](demo/index.html) — a self-contained multipage site
 (story · architecture diagrams · agent workforce · platform), served by the factory itself at
