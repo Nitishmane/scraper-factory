@@ -145,12 +145,35 @@ make verify                   # fixture gate; non-zero exit on mismatch
 ```
 
 With the service up, open **<http://localhost:8000/>** — that's the demo site, served by the
-factory. `make run` / `catalog` / `rank` / `publish` are developer conveniences; in operation,
-Port's workflows call the equivalent endpoints on a schedule.
+factory. `make run` / `catalog` / `rank` / `publish` are developer conveniences.
 
-**Tunnels.** Port's cloud must reach the factory's webhook endpoints, and Bright Data's cloud
-collectors must reach the frozen fixtures — neither can see `localhost`. Expose both with
-`cloudflared` and point the env vars at the printed URLs:
+### Production path — weekly, laptop-free
+
+In operation nothing runs on the laptop. Port's `wf_scheduled_scrape` workflow (cron, Mondays
+08:00 UTC) dispatches the **`weekly-scrape` GitHub Actions workflow**, which runs the whole
+pipeline inside the runner: scrape all providers (7-day window) → heal-if-drifted (same
+Bright Data heal → deterministic fixture-verify → approve/reject contract) → catalog refresh →
+rank + publish. The runner serves `fixtures/` to Bright Data's cloud through a job-scoped
+`cloudflared` quick tunnel, so no standing tunnel exists. The `run_scrape_now` self-service
+action in Port dispatches the same workflow on demand. A GitHub `schedule` fallback fires two
+hours after Port's slot and skips itself if a Port-triggered run already succeeded that week.
+
+One-time setup:
+
+- **GitHub repo secrets**: `BRIGHTDATA_API_KEY`, `PORT_CLIENT_ID`, `PORT_CLIENT_SECRET`,
+  `TMDB_API_KEY`. **Repo variables**: `SCRAPER_STUDIO_COLLECTOR_ID_CHANNEL`,
+  `SCRAPER_STUDIO_COLLECTOR_ID_PHILO_CATALOG`. (Per the standing rule, no `ANTHROPIC_API_KEY`
+  in CI — the Builder stays laptop-only.)
+- **Port org secret `github-pat`**: a fine-grained GitHub PAT scoped to this repo with
+  *Actions: write* (Port UI → Credentials → Secrets). Port's workflow/action definitions
+  reference it as `{{ .secrets["github-pat"] }}`; it never appears in plaintext config.
+- `make bootstrap` to push the workflow/action definitions to Port.
+
+### Dev/demo path — tunnels
+
+For local demos, Port's cloud must reach the factory's webhook endpoints, and Bright Data's
+cloud collectors must reach the frozen fixtures — neither can see `localhost`. Expose both
+with `cloudflared` and point the env vars at the printed URLs:
 
 ```bash
 cloudflared tunnel --url http://localhost:8000   # factory: set *_WEBHOOK_URL (+ token) before `make bootstrap`
@@ -413,16 +436,20 @@ The catalog scraper has no fixture (moving target by design) and is gated by `ca
 
 ## Limitations — what's real and what isn't
 
-- **The factory runs on the operator's machine.** Port workflows drive the cycle by calling the
-  FastAPI endpoints, but those endpoints execute locally — Bright Data's streaming-domain policy
-  and the self-hosted SigNoz keep the actual scraping on the laptop, reachable via the tunnel.
-  Port *operates* the factory; it does not yet *host* it.
+- **The production scrape is a weekly GitHub Actions job, not a hosted service.** Port
+  dispatches `weekly-scrape.yml` (schedule or the `run_scrape_now` action) and the runner does
+  scrape → heal → catalog → publish, then vanishes. Between runs there is no live endpoint:
+  SigNoz-alert-driven healing, `/build`, and `/feature` only work when the dev/demo laptop
+  service (and its tunnels) is up. Port *operates* the factory; GitHub hosts each run of it.
 - **Bright Data policy blocks collector runs against streaming-media domains** (support-endorsed
   fetch/extract split). Runs in the Bright Data console show relay-tunnel URLs (the content is
-  live — the Web Unlocker fetched it seconds earlier), and the factory depends on the fixtures
-  tunnel being up.
-- **Quick-tunnel URLs rotate on restart.** Update the `*_WEBHOOK_URL` / `FIXTURE_BASE_URL` env
-  vars and re-run `make bootstrap` when they change.
+  live — the Web Unlocker fetched it seconds earlier); the weekly job serves the relay through
+  its own job-scoped tunnel, and dev runs depend on the fixtures tunnel being up.
+- **Quick-tunnel URLs rotate on restart** (dev/demo path only). Update the `*_WEBHOOK_URL` /
+  `FIXTURE_BASE_URL` env vars and re-run `make bootstrap` when they change.
+- **Weekly state lives in an Actions cache.** `out/factory.db` is carried between weekly runs
+  via `actions/cache` so lineup-churn confirmation (two consecutive runs) works; caches evicted
+  after 7 days of disuse just reset that confirmation window, nothing else.
 - **The catalog scraper has no fixture gate** — a row-count band instead — and relies on the
   embedded-JSON parser because philo.com is a JS SPA.
 - **Catalog coverage is partial**: the browse pages render a subset of Philo's library, so some

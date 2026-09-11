@@ -43,6 +43,23 @@ RUN_WEBHOOK = _tokened(os.getenv("RUN_WEBHOOK_URL", "http://localhost:8000/run")
 CATALOG_WEBHOOK = _tokened(os.getenv("CATALOG_WEBHOOK_URL", "http://localhost:8000/catalog"))
 PUBLISH_WEBHOOK = _tokened(os.getenv("PUBLISH_WEBHOOK_URL", "http://localhost:8000/publish"))
 
+# The production scrape path is laptop-free: Port dispatches the weekly-scrape GitHub Actions
+# workflow, which runs scrape -> heal-if-drifted -> catalog -> publish inside the runner (see
+# .github/workflows/weekly-scrape.yml). The *_WEBHOOK endpoints above remain for the optional
+# always-on dev/demo service. Auth: a fine-grained GitHub PAT (this repo only, Actions:write)
+# stored as the Port org secret `github_pat` (Port UI -> Credentials -> Secrets, or
+# POST /v1/organization/secrets); Port resolves {{ .secrets.github_pat }} at invocation.
+# Underscore name on purpose: the dashed bracket form ({{ .secrets["..."] }}) did not resolve.
+GITHUB_REPO = os.getenv("GITHUB_DISPATCH_REPO", "Nitishmane/scraper-factory")
+GITHUB_DISPATCH_URL = (
+    f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/weekly-scrape.yml/dispatches"
+)
+GITHUB_DISPATCH_HEADERS = {
+    "Authorization": "Bearer {{ .secrets.github_pat }}",
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+}
+
 DATA_SOURCE = {
     "identifier": "data_source",
     "title": "Data Source",
@@ -308,20 +325,23 @@ FEATURE_REQUEST_ACTION = {
 
 WF_SCHEDULED_SCRAPE = {
     "identifier": "wf_scheduled_scrape",
-    "title": "Scheduled scrape (all providers)",
+    "title": "Weekly scrape (all providers, laptop-free)",
     "nodes": [
         {
             "identifier": "trigger",
-            "title": "Daily at 08:00 UTC",
-            "config": {"type": "SCHEDULE_TRIGGER", "cron": "0 8 * * *", "published": True},
+            "title": "Mondays at 08:00 UTC",
+            "config": {"type": "SCHEDULE_TRIGGER", "cron": "0 8 * * 1", "published": True},
         },
         {
             "identifier": "run_scrape",
-            "title": "Kick off a full scrape",
-            # No provider -> the endpoint scrapes all providers; days:1 keeps the scheduled
-            # run cheap (a full 12-day sweep is ~144 fetches; see CLAUDE.md scrape volume).
-            "config": {"type": "WEBHOOK", "method": "POST", "url": RUN_WEBHOOK,
-                       "body": {"days": 1}},
+            "title": "Dispatch the weekly-scrape GitHub Actions workflow",
+            # Dispatches GitHub Actions instead of the laptop /run webhook: the runner hosts
+            # the whole pipeline (scrape -> heal-if-drifted -> catalog -> publish) so nothing
+            # depends on the operator's machine. workflow_dispatch inputs are strings.
+            "config": {"type": "WEBHOOK", "method": "POST", "url": GITHUB_DISPATCH_URL,
+                       "headers": GITHUB_DISPATCH_HEADERS,
+                       "body": {"ref": "main",
+                                "inputs": {"provider": "all", "days": "7"}}},
         },
     ],
     "connections": [{"sourceIdentifier": "trigger", "targetIdentifier": "run_scrape"}],
@@ -333,10 +353,11 @@ WF_SCHEDULED_CATALOG = {
     "nodes": [
         {
             "identifier": "trigger",
-            "title": "Daily at 07:30 UTC",
-            # 30 min before the scrape so title -> record-URL mapping is fresh when the guide
-            # rows land. The catalog legitimately changes daily (no fixture; MIN_ROWS gate).
-            "config": {"type": "SCHEDULE_TRIGGER", "cron": "30 7 * * *", "published": True},
+            "title": "Daily at 07:30 UTC (paused: catalog refresh moved into the weekly job)",
+            # Unpublished: scripts/weekly_run.py refreshes the catalog inside the GitHub
+            # Actions run, and this webhook only resolves when the dev/demo laptop service is
+            # up. Flip published back to True if an always-on /catalog endpoint returns.
+            "config": {"type": "SCHEDULE_TRIGGER", "cron": "30 7 * * *", "published": False},
         },
         {
             "identifier": "refresh_catalog",
@@ -347,11 +368,13 @@ WF_SCHEDULED_CATALOG = {
     "connections": [{"sourceIdentifier": "trigger", "targetIdentifier": "refresh_catalog"}],
 }
 
-# A successful scrape_run publishes the fresh top-20. ENTITY_UPDATED as well as ENTITY_CREATED
-# so a run row flipped to success post-hoc still publishes; the /publish endpoint is idempotent.
+# Publishing now happens inside the weekly GitHub Actions job (scripts/weekly_run.py calls
+# publish.push() right after the scrape), so this workflow is unpublished: with no always-on
+# /publish endpoint it would log a failed invocation after every weekly scrape_run entity.
+# Flip published back to True if the dev/demo laptop service becomes the scrape path again.
 WF_PUBLISH_ON_SUCCESS = {
     "identifier": "wf_publish_on_success",
-    "title": "Publish top-20 on a successful run",
+    "title": "Publish top-20 on a successful run (paused: publish moved into the weekly job)",
     "nodes": [
         {
             "identifier": "trigger",
@@ -364,7 +387,7 @@ WF_PUBLISH_ON_SUCCESS = {
                     "expressions": ['.diff.after.properties.status == "success"'],
                     "combinator": "and",
                 },
-                "published": True,
+                "published": False,
             },
         },
         {
@@ -379,6 +402,9 @@ WF_PUBLISH_ON_SUCCESS = {
 # A bad run (error, or drift detected) triages then heals. The triage AI agent authors the
 # plain-language SYMPTOM description the healer sends to Bright Data (never a guessed fix, per
 # CLAUDE.md); the deterministic Verifier still owns promotion downstream of /heal.
+# NOTE: /heal only resolves while the dev/demo laptop service is up. The weekly GitHub Actions
+# job heals drift in-job (scripts/weekly_run.py), so this workflow is the *between-runs* path
+# and is expected to no-op (failed invocation) when no always-on service exists.
 WF_HEAL_ON_BAD_RUN = {
     "identifier": "wf_heal_on_bad_run",
     "title": "Triage + heal on a bad run",
@@ -490,7 +516,7 @@ EVENT_WORKFLOWS = (WF_PUBLISH_ON_SUCCESS, WF_HEAL_ON_BAD_RUN)
 RUN_SCRAPE_NOW_ACTION = {
     "identifier": "run_scrape_now",
     "title": "Scrape TV guides \u2192 Bright Data collectors",
-    "description": "Scrape streamingtvguides.com channel pages now (one provider or all) via the Bright Data fetch/extract relay; results land as scrape_run entities",
+    "description": "Dispatch the weekly-scrape GitHub Actions workflow now (one provider or all); the runner scrapes via the Bright Data fetch/extract relay and results land as scrape_run entities",
     "trigger": {
         "type": "self-service",
         "operation": "DAY-2",
@@ -502,17 +528,23 @@ RUN_SCRAPE_NOW_ACTION = {
                     "enum": ["philo", "youtubetv", "sling", "all"],
                     "default": "all",
                 },
-                "days": {"type": "number", "title": "Days", "default": 1},
+                # String, not number: GitHub workflow_dispatch inputs must be strings, and Port
+                # substitutes a lone {{ .inputs.x }} template with the input's native type.
+                "days": {"type": "string", "title": "Days", "default": "1"},
             },
             "required": [],
         },
     },
     "invocationMethod": {
         "type": "WEBHOOK",
-        "url": RUN_WEBHOOK,
+        "url": GITHUB_DISPATCH_URL,
+        "headers": GITHUB_DISPATCH_HEADERS,
         "body": {
-            "provider": "{{ .inputs.provider }}",
-            "days": "{{ .inputs.days }}",
+            "ref": "main",
+            "inputs": {
+                "provider": "{{ .inputs.provider }}",
+                "days": "{{ .inputs.days }}",
+            },
         },
     },
     "publish": True,

@@ -1,0 +1,127 @@
+name: Weekly scrape
+
+# Port's scheduled workflow (wf_scheduled_scrape) dispatches this via the GitHub API every
+# Monday 08:00 UTC. The `schedule` trigger below is only a safety net: it fires 2h later and
+# the guard job skips it when a dispatch-triggered run already succeeded this week.
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: "Provider to scrape (philo|youtubetv|sling|all)"
+        default: "all"
+        type: string
+      days:
+        description: "Days of guide data to keep"
+        default: "7"
+        type: string
+  schedule:
+    - cron: "0 10 * * 1"
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    outputs:
+      proceed: ${{ steps.check.outputs.proceed }}
+    steps:
+      - name: Skip the fallback if Port already triggered this week
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "proceed=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          since=$(date -u -d '6 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          recent=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow weekly-scrape.yml \
+            --event workflow_dispatch --status success --created ">$since" \
+            --json databaseId --jq 'length')
+          if [ "$recent" -gt 0 ]; then
+            echo "Port-triggered run already succeeded this week; skipping fallback."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  scrape:
+    needs: guard
+    if: needs.guard.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      OTEL_SDK_DISABLED: "true"
+      PYTHONPATH: src
+      BRIGHTDATA_API_KEY: ${{ secrets.BRIGHTDATA_API_KEY }}
+      PORT_CLIENT_ID: ${{ secrets.PORT_CLIENT_ID }}
+      PORT_CLIENT_SECRET: ${{ secrets.PORT_CLIENT_SECRET }}
+      TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+      SCRAPER_STUDIO_COLLECTOR_ID_CHANNEL: ${{ vars.SCRAPER_STUDIO_COLLECTOR_ID_CHANNEL }}
+      SCRAPER_STUDIO_COLLECTOR_ID_PHILO_CATALOG: ${{ vars.SCRAPER_STUDIO_COLLECTOR_ID_PHILO_CATALOG }}
+      BRIGHTDATA_BIN: brightdata
+      # The laptop CLI stores its default Web Unlocker zone in local config; the runner has
+      # none, so the zone must come through the environment.
+      BRIGHTDATA_UNLOCKER_ZONE: ${{ vars.BRIGHTDATA_UNLOCKER_ZONE }}
+      STATE_DB: out/factory.db
+      RELAY_CACHE_MINUTES: "30"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          npm install -g @brightdata/cli
+
+      # Lineup churn detection needs two consecutive confirming runs (pending_change table),
+      # so the otherwise-disposable SQLite DB is carried across weekly runs via the cache.
+      - name: Restore factory DB from last run
+        uses: actions/cache@v4
+        with:
+          path: out/factory.db
+          key: factory-db-${{ github.run_id }}
+          restore-keys: factory-db-
+
+      # Bright Data collectors run in Bright Data's cloud and cannot reach localhost, so the
+      # fixtures dir (frozen fixtures + the relay pages Web Unlocker writes) is served through
+      # a quick tunnel that lives only as long as this job.
+      - name: Serve fixtures through a tunnel
+        run: |
+          mkdir -p out fixtures/relay
+          python -m http.server 9000 --directory fixtures > fixture-server.log 2>&1 &
+          curl -sSL -o /usr/local/bin/cloudflared \
+            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+          chmod +x /usr/local/bin/cloudflared
+          cloudflared tunnel --url http://localhost:9000 > cloudflared.log 2>&1 &
+          URL=""
+          for _ in $(seq 1 30); do
+            URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' cloudflared.log | head -1)
+            [ -n "$URL" ] && break
+            sleep 2
+          done
+          if [ -z "$URL" ]; then
+            echo "::error::cloudflared never printed a tunnel URL"; cat cloudflared.log; exit 1
+          fi
+          echo "FIXTURE_BASE_URL=$URL" >> "$GITHUB_ENV"
+          # A fresh quick tunnel prints its URL seconds before the edge actually routes it
+          # (DNS + connection setup), so poll until it serves; plain `curl --retry` gives up
+          # on connection-refused.
+          ready=""
+          for _ in $(seq 1 30); do
+            if curl -sf -o /dev/null "$URL/channel.html"; then ready=1; break; fi
+            sleep 3
+          done
+          if [ -z "$ready" ]; then
+            echo "::error::tunnel URL never became reachable: $URL"; cat cloudflared.log; exit 1
+          fi
+          echo "fixtures reachable at $URL"
+
+      - name: Scrape, heal if drifted, refresh catalog, publish
+        run: |
+          python scripts/weekly_run.py \
+            --provider "${{ inputs.provider || 'all' }}" \
+            --days "${{ inputs.days || '7' }}"
