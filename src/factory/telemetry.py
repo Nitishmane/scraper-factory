@@ -101,6 +101,11 @@ def _build_metrics() -> None:
             "scraper.run.failures",
             description="Scrape runs that raised (attrs target.provider, error.type)",
         ),
+        fetch_failures=m.create_counter(
+            "scraper.fetch.failures",
+            description="Channel pages skipped because the fetch raised "
+            "(attrs target.provider, error.type)",
+        ),
         heal_attempts=m.create_counter("scraper.heal.attempts", description="Heal attempts"),
         heal_success=m.create_counter("scraper.heal.success", description="Heals promoted"),
         verify_pass=m.create_counter("scraper.verify.pass", description="Fixture gate passes"),

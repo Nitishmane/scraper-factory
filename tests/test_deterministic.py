@@ -204,6 +204,64 @@ def test_run_once_clean_success_sets_healthy(isolated_state, monkeypatch):
     assert ("c_test", "healthy") in health_calls
 
 
+def _lineup_of(n):
+    return lambda provider: [
+        {"channel": f"CH{i}", "url": f"https://x/Channel/CH{i}"} for i in range(n)
+    ]
+
+
+def _scrape_failing_on(bad_channels):
+    def _scrape(cid, url):
+        if url.rsplit("/", 1)[-1] in bad_channels:
+            raise brightdata.BrightDataError("captcha or protection page found")
+        ch = url.rsplit("/", 1)[-1]
+        rows = [
+            {"title": f"{ch} Program {i}", "date_raw": "Sat, Aug 22", "start_raw": "8:00 PM"}
+            for i in range(20)
+        ]
+        return rows, "relay", False
+
+    return _scrape
+
+
+def test_run_once_skips_one_unfetchable_page(isolated_state, monkeypatch):
+    """One page that cannot be fetched is skipped; the other channels persist, no drift."""
+    monkeypatch.setattr(pipeline, "collector_id", lambda: "c_test")
+    monkeypatch.setattr(pipeline, "lineup", _lineup_of(25))
+    monkeypatch.setattr(pipeline, "_scrape_page", _scrape_failing_on({"CH3"}))
+    monkeypatch.setattr(port, "upsert_entity", lambda *a, **k: None)
+    health_calls: list[tuple] = []
+    monkeypatch.setattr(
+        port,
+        "set_scraper_health",
+        lambda scraper_id, health, **extra: health_calls.append((scraper_id, health)),
+    )
+
+    result = pipeline.run_once("philo", days=7)
+    assert not result["drift"], result["drift_description"]
+    assert result["failed_channels"] == ["CH3"]
+    assert result["rows"] == 24 * 20
+    assert ("c_test", "healthy") in health_calls
+
+
+def test_run_once_raises_when_too_many_pages_fail(isolated_state, monkeypatch):
+    """Past EMPTY_PAGE_LIMIT, fetch failures fail the run instead of being skipped."""
+    monkeypatch.setattr(pipeline, "collector_id", lambda: "c_test")
+    monkeypatch.setattr(pipeline, "lineup", _lineup_of(10))
+    monkeypatch.setattr(pipeline, "_scrape_page", _scrape_failing_on({"CH0", "CH1", "CH2"}))
+    monkeypatch.setattr(port, "upsert_entity", lambda *a, **k: None)
+    health_calls: list[tuple] = []
+    monkeypatch.setattr(
+        port,
+        "set_scraper_health",
+        lambda scraper_id, health, **extra: health_calls.append((scraper_id, health)),
+    )
+
+    with pytest.raises(brightdata.BrightDataError):
+        pipeline.run_once("philo", days=7)
+    assert ("c_test", "drifting") not in health_calls
+
+
 # --- portwatch new-run diffing -----------------------------------------------------
 
 

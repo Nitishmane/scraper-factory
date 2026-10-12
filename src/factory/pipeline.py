@@ -204,6 +204,8 @@ def run_once(
 
         rows: list[dict[str, Any]] = []
         empty_pages = 0
+        failed_channels: list[str] = []
+        last_fetch_error: brightdata.BrightDataError | None = None
         try:
             for page in pages:
                 with telemetry.tracer().start_as_current_span("scrape.fetch") as fetch:
@@ -213,7 +215,24 @@ def run_once(
                     fetch.set_attribute("channel.name", page["channel"])
                     fetch.set_attribute("channel.id", channel_id)
                     fetch.set_attribute("channel.url", page["url"])
-                    page_rows, mode, cache_hit = _scrape_page(cid, page["url"])
+                    try:
+                        page_rows, mode, cache_hit = _scrape_page(cid, page["url"])
+                    except brightdata.BrightDataError as exc:
+                        # One unfetchable page (e.g. Web Unlocker hitting a captcha) must not
+                        # discard every other channel. It is a fetch failure, not drift, so it
+                        # is excluded from the drift verdict below; too many of them still
+                        # fail the run.
+                        last_fetch_error = exc
+                        failed_channels.append(page["channel"])
+                        fetch.set_attribute("fetch.error", f"{type(exc).__name__}: {exc}"[:500])
+                        telemetry.metric("fetch_failures").add(
+                            1, {"target.provider": provider, "error.type": type(exc).__name__}
+                        )
+                        telemetry.log().warning(
+                            "scrape run %s for %s: skipping %s, fetch failed: %s",
+                            run_id, provider, page["url"], exc,
+                        )
+                        continue
                     fetch_secs = time.perf_counter() - fetch_started
                     fetch.set_attribute("fetch.mode", mode)
                     fetch.set_attribute("channel.rows", len(page_rows))
@@ -233,6 +252,11 @@ def run_once(
                         row["channel"] = page["channel"]
                     rows.extend(page_rows)
 
+            span.set_attribute("guide.channels_failed", len(failed_channels))
+            if last_fetch_error and len(failed_channels) / len(pages) > detect.EMPTY_PAGE_LIMIT:
+                raise last_fetch_error
+            fetched_pages = len(pages) - len(failed_channels)
+
             with telemetry.tracer().start_as_current_span("scrape.extract"):
                 cutoff = (
                     dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=days)
@@ -251,9 +275,9 @@ def run_once(
                     provider,
                     cid,
                     rows,
-                    pages=len(pages),
+                    pages=fetched_pages,
                     empty_pages=empty_pages,
-                    expected_channels=len(pages),
+                    expected_channels=fetched_pages,
                 )
                 span.set_attribute("schema.hash", detect.schema_hash(rows))
                 span.set_attribute("drift.detected", drift.detected)
@@ -293,6 +317,7 @@ def run_once(
                 "rows": len(rows),
                 "drift": drift.detected,
                 "drift_description": drift.description,
+                "failed_channels": failed_channels,
                 "trace_url": trace_url,
             }
         except Exception as exc:
